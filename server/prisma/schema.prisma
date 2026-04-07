@@ -1,0 +1,160 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum Role {
+  CONSUMER
+  SUPPORT
+  FINANCE
+  ADMIN
+  SUPERADMIN
+}
+
+enum KycStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  MANUAL_REVIEW
+}
+
+enum GiftCardStatus {
+  REVIEWING
+  APPROVED
+  REJECTED
+}
+
+enum InventoryStatus {
+  AVAILABLE
+  SOLD
+  VOID
+}
+
+enum TxStatus {
+  PENDING
+  COMPLETE
+  FAILED
+  REFUNDED
+}
+
+enum TxType {
+  CRYPTO_BUY
+  CRYPTO_SELL
+  SWAP
+  GIFT_CARD_SELL
+  GIFT_CARD_BUY
+  BILL_PAY
+  WITHDRAWAL
+  DEPOSIT
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  phone        String?
+  passwordHash String
+  role         Role     @default(CONSUMER)
+  isFrozen     Boolean  @default(false)
+  mfaEnabled   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  lastLoginAt  DateTime?
+
+  kycCases             KycCase[]
+  giftCardSubmissions  GiftCardSubmission[]
+  inventoryPurchases   InventoryItem[]     @relation("InventoryPurchasedBy")
+  transactions         Transaction[]
+  auditLogsAsActor     AuditLog[]          @relation("AuditActor")
+  giftCardsReviewed    GiftCardSubmission[] @relation("GiftCardReviewedBy")
+  kycReviewed          KycCase[]           @relation("KycReviewedBy")
+}
+
+model KycCase {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status       KycStatus @default(PENDING)
+  providerRef  String?
+  ssn4         String?
+  dob          String?
+  selfieUrl    String?
+  reviewedById String?
+  reviewedBy   User?     @relation("KycReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewNotes  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model GiftCardSubmission {
+  id           String        @id @default(cuid())
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brand        String
+  valueUsdCents Int
+  offerUsdtCents Int
+  status       GiftCardStatus @default(REVIEWING)
+  frontImageUrl String?
+  backImageUrl  String?
+  ocrCode      String?
+  fraudFlagsJson String @default("[]")
+  reviewedById String?
+  reviewedBy   User?         @relation("GiftCardReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewNotes  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model InventoryItem {
+  id            String          @id @default(cuid())
+  brand         String
+  valueUsdCents Int
+  code          String
+  status        InventoryStatus @default(AVAILABLE)
+  purchasedById String?
+  purchasedBy   User?           @relation("InventoryPurchasedBy", fields: [purchasedById], references: [id], onDelete: SetNull)
+  purchasedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Transaction {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type          TxType
+  status        TxStatus @default(PENDING)
+  asset         String?
+  amountUsdCents Int?
+  amountAssetMinor Int?
+  metadataJson  String   @default("{}")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Setting {
+  key        String   @id
+  valueJson  String
+  updatedAt  DateTime @updatedAt
+  updatedById String?
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  action     String
+  entity     String
+  entityId   String?
+  beforeJson String?
+  afterJson  String?
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+}

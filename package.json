@@ -1,0 +1,26 @@
+{
+  "name": "xpay",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "set ComSpec=%SystemRoot%\\System32\\cmd.exe&& set COMSPEC=%SystemRoot%\\System32\\cmd.exe&& concurrently -n server,admin -c auto \"npm run dev -w server\" \"npm run dev -w admin\"",
+    "dev:server": "npm run dev -w server",
+    "dev:admin": "npm run dev -w admin",
+    "build": "npm run build -w server && npm run build -w admin",
+    "lint": "npm run lint -w server && npm run lint -w admin",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w admin"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "workspaces": [
+    "admin",
+    "app",
+    "server"
+  ],
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
