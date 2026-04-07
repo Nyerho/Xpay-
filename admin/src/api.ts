@@ -3,6 +3,15 @@ export type ApiError = {
   message?: string
 }
 
+function withBaseUrl(path: string) {
+  const base = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? ''
+  if (!base) return path
+  if (path.startsWith('http://') || path.startsWith('https://')) return path
+  const normalizedBase = base.endsWith('/') ? base.slice(0, -1) : base
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  return normalizedBase + normalizedPath
+}
+
 export async function apiFetch<T>(
   path: string,
   opts: {
@@ -12,7 +21,7 @@ export async function apiFetch<T>(
     signal?: AbortSignal
   } = {},
 ): Promise<T> {
-  const res = await fetch(path, {
+  const res = await fetch(withBaseUrl(path), {
     method: opts.method ?? (opts.body ? 'POST' : 'GET'),
     headers: {
       'content-type': 'application/json',
@@ -40,7 +49,7 @@ export async function apiDownload(
   filename: string,
   token: string,
 ) {
-  const res = await fetch(path, {
+  const res = await fetch(withBaseUrl(path), {
     headers: { authorization: `Bearer ${token}` },
   })
   if (!res.ok) throw new Error('download_failed')
