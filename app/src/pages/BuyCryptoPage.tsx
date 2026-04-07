@@ -1,18 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 
 const coins = ['USDT', 'BTC', 'ETH'] as const
 type Coin = (typeof coins)[number]
 
 export function BuyCryptoPage() {
   const [coin, setCoin] = useState<Coin>('USDT')
-  const [usd, setUsd] = useState('200')
-
-  const quote = useMemo(() => {
-    const amount = Number(usd || '0')
-    const spread = 0.02
-    const pay = amount * (1 + spread)
-    return { pay, receive: amount }
-  }, [usd])
+  const [usd, setUsd] = useState('')
 
   return (
     <div className="container">
@@ -34,24 +27,16 @@ export function BuyCryptoPage() {
             <input className="form-control" value={usd} onChange={(e) => setUsd(e.target.value)} inputMode="decimal" />
           </div>
 
-          <div className="alert alert-primary">
-            <div className="d-flex justify-content-between">
-              <div className="text-muted">You pay</div>
-              <div className="fw-bold">${quote.pay.toFixed(2)}</div>
-            </div>
-            <div className="d-flex justify-content-between">
-              <div className="text-muted">You get</div>
-              <div className="fw-bold">
-                {quote.receive.toFixed(2)} {coin}
-              </div>
-            </div>
-            <div className="text-muted small mt-2">Quote lock: 15 minutes • Fixed spread: 2%</div>
+          <div className="alert alert-secondary">
+            <div className="fw-semibold">Quotes unavailable</div>
+            <div className="text-muted small">Enable trading integrations to fetch live pricing.</div>
           </div>
 
-          <button className="btn btn-primary w-100">Pay with Debit Card (Preview)</button>
+          <button className="btn btn-primary w-100" disabled>
+            Pay with Debit Card
+          </button>
         </div>
       </div>
     </div>
   )
 }
-

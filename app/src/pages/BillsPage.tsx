@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { apiFetch } from '../api'
 
 type Biller = { name: string; category: string }
 
@@ -18,14 +19,26 @@ const billers: Biller[] = [
 export function BillsPage() {
   const [biller, setBiller] = useState(billers[0]!.name)
   const [acct, setAcct] = useState('')
-  const [amountUsd, setAmountUsd] = useState('120')
+  const [amountUsd, setAmountUsd] = useState('')
   const [payFrom, setPayFrom] = useState<'USD' | 'USDT'>('USDT')
+  const [spreadBps, setSpreadBps] = useState<number | null>(null)
+
+  useEffect(() => {
+    apiFetch<{ valueJson: string }>('/api/public/spreads')
+      .then((r) => {
+        const v = JSON.parse(r.valueJson) as { fixedSpreadBps?: number }
+        setSpreadBps(typeof v.fixedSpreadBps === 'number' ? v.fixedSpreadBps : null)
+      })
+      .catch(() => {
+        setSpreadBps(null)
+      })
+  }, [])
 
   const quote = useMemo(() => {
     const amt = Number(amountUsd || '0')
-    const spread = 0.02
+    const spread = spreadBps === null ? 0 : spreadBps / 10000
     return payFrom === 'USDT' ? amt * (1 + spread) : amt
-  }, [amountUsd, payFrom])
+  }, [amountUsd, payFrom, spreadBps])
 
   return (
     <div className="container">
@@ -64,22 +77,21 @@ export function BillsPage() {
             {payFrom === 'USDT' ? (
               <>
                 Pay <span className="fw-bold">{quote.toFixed(2)} USDT</span>
-                <div className="text-muted small mt-1">2FA required • TRC20 used to save gas (Preview)</div>
+                <div className="text-muted small mt-1">2FA required • TRC20 used to save gas</div>
               </>
             ) : (
               <>
                 Pay <span className="fw-bold">${quote.toFixed(2)}</span>
-                <div className="text-muted small mt-1">2FA required (Preview)</div>
+                <div className="text-muted small mt-1">2FA required</div>
               </>
             )}
           </div>
 
-          <button className="btn btn-danger w-100" disabled={!acct.trim()}>
-            Pay Now (Preview)
+          <button className="btn btn-danger w-100" disabled>
+            Pay Now
           </button>
         </div>
       </div>
     </div>
   )
 }
-

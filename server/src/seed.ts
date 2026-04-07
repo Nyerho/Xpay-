@@ -7,10 +7,16 @@ async function main() {
   const password = process.env.GOD_PASSWORD ?? "ChangeMe123!";
   const passwordHash = await hashPassword(password);
 
-  await prisma.user.upsert({
+  const god = await prisma.user.upsert({
     where: { email },
     create: { email, passwordHash, role: "SUPERADMIN" },
     update: { passwordHash, role: "SUPERADMIN" },
+  });
+
+  await prisma.balance.upsert({
+    where: { userId: god.id },
+    create: { userId: god.id },
+    update: {},
   });
 
   const defaultSettings: Array<{ key: string; valueJson: string }> = [

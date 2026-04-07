@@ -63,6 +63,7 @@ model User {
   updatedAt    DateTime @updatedAt
   lastLoginAt  DateTime?
 
+  balance              Balance?
   kycCases             KycCase[]
   giftCardSubmissions  GiftCardSubmission[]
   inventoryPurchases   InventoryItem[]     @relation("InventoryPurchasedBy")
@@ -70,6 +71,18 @@ model User {
   auditLogsAsActor     AuditLog[]          @relation("AuditActor")
   giftCardsReviewed    GiftCardSubmission[] @relation("GiftCardReviewedBy")
   kycReviewed          KycCase[]           @relation("KycReviewedBy")
+}
+
+model Balance {
+  userId   String   @id
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  usdCents  Int @default(0)
+  usdtCents Int @default(0)
+  btcSats   Int @default(0)
+  ethWei    String @default("0")
+
+  updatedAt DateTime @updatedAt
 }
 
 model KycCase {

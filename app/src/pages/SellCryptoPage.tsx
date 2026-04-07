@@ -1,20 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 
 const coins = ['BTC', 'ETH', 'USDT'] as const
 type Coin = (typeof coins)[number]
 
 export function SellCryptoPage() {
   const [coin, setCoin] = useState<Coin>('BTC')
-  const [amount, setAmount] = useState('0.01')
-
-  const quote = useMemo(() => {
-    const a = Number(amount || '0')
-    const usdRate = coin === 'BTC' ? 58200 : coin === 'ETH' ? 3200 : 1
-    const gross = a * usdRate
-    const spread = 0.02
-    const net = gross * (1 - spread)
-    return { gross, net }
-  }, [amount, coin])
+  const [amount, setAmount] = useState('')
 
   return (
     <div className="container">
@@ -36,18 +27,16 @@ export function SellCryptoPage() {
             <input className="form-control" value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" />
           </div>
 
-          <div className="alert alert-primary">
-            <div className="d-flex justify-content-between">
-              <div className="text-muted">Quote</div>
-              <div className="fw-bold">${quote.net.toFixed(2)} USD</div>
-            </div>
-            <div className="text-muted small mt-2">Fixed spread: 2% • Instant USD credit (Preview)</div>
+          <div className="alert alert-secondary">
+            <div className="fw-semibold">Quotes unavailable</div>
+            <div className="text-muted small">Enable trading integrations to fetch live pricing.</div>
           </div>
 
-          <button className="btn btn-primary w-100">Sell Now (Preview)</button>
+          <button className="btn btn-primary w-100" disabled>
+            Sell Now
+          </button>
         </div>
       </div>
     </div>
   )
 }
-

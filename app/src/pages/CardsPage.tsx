@@ -1,24 +1,51 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { apiFetch } from '../api'
 
 const brands = ['Amazon', 'iTunes', 'Google Play', 'Steam', 'Walmart', 'Visa', 'Amex', 'eBay'] as const
 type Brand = (typeof brands)[number]
 
+type Rate = { buyPct: number; sellPct: number }
+
 export function CardsPage() {
   const [tab, setTab] = useState<'sell' | 'buy'>('sell')
   const [brand, setBrand] = useState<Brand>('Amazon')
-  const [value, setValue] = useState('100')
+  const [value, setValue] = useState('')
+  const [rates, setRates] = useState<Record<string, Rate> | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setLoading(true)
+    setError(null)
+    apiFetch<{ valueJson: string }>('/api/public/gift-card-rates')
+      .then((r) => {
+        const parsed = JSON.parse(r.valueJson) as Record<string, Rate>
+        setRates(parsed)
+      })
+      .catch((e: unknown) => {
+        const msg = e && typeof e === 'object' && 'error' in e ? String((e as { error: string }).error) : 'load_failed'
+        setError(msg)
+      })
+      .finally(() => setLoading(false))
+  }, [])
 
   const sellOffer = useMemo(() => {
+    if (!rates) return null
     const v = Number(value || '0')
-    const buyPct = brand === 'Visa' || brand === 'Amex' ? 0.65 : brand === 'Steam' ? 0.8 : brand === 'Amazon' ? 0.75 : 0.7
-    return v * buyPct
-  }, [brand, value])
+    const key = brand.toUpperCase().replaceAll(' ', '_')
+    const rate = rates[key]
+    if (!rate) return null
+    return v * rate.buyPct
+  }, [brand, rates, value])
 
   const buyPrice = useMemo(() => {
+    if (!rates) return null
     const v = Number(value || '0')
-    const sellPct = brand === 'Steam' ? 0.9 : brand === 'Amazon' ? 0.85 : 0.82
-    return v * sellPct
-  }, [brand, value])
+    const key = brand.toUpperCase().replaceAll(' ', '_')
+    const rate = rates[key]
+    if (!rate) return null
+    return v * rate.sellPct
+  }, [brand, rates, value])
 
   return (
     <div className="container">
@@ -39,6 +66,7 @@ export function CardsPage() {
 
       <div className="card shadow-sm">
         <div className="card-body">
+          {error ? <div className="alert alert-danger py-2">{error}</div> : null}
           <div className="row g-2">
             <div className="col-12 col-md-6">
               <label className="form-label">Brand</label>
@@ -59,18 +87,28 @@ export function CardsPage() {
           {tab === 'sell' ? (
             <div className="mt-3">
               <div className="alert alert-primary">
-                Offer: <span className="fw-bold">{sellOffer.toFixed(2)} USDT</span>
-                <div className="text-muted small mt-1">Upload front/back • OCR code • Admin review (SLA &lt; 15 min)</div>
+                Offer:{' '}
+                <span className="fw-bold">
+                  {loading ? '—' : sellOffer === null ? '—' : `${sellOffer.toFixed(2)} USDT`}
+                </span>
+                <div className="text-muted small mt-1">Rates come from server settings. Submission requires image upload integration.</div>
               </div>
-              <button className="btn btn-primary w-100">Submit Gift Card (Preview)</button>
+              <button className="btn btn-primary w-100" disabled>
+                Submit Gift Card
+              </button>
             </div>
           ) : (
             <div className="mt-3">
               <div className="alert alert-primary">
-                Price: <span className="fw-bold">{buyPrice.toFixed(2)} USD</span>
-                <div className="text-muted small mt-1">Instant code reveal • Inventory-based</div>
+                Price:{' '}
+                <span className="fw-bold">
+                  {loading ? '—' : buyPrice === null ? '—' : `$${buyPrice.toFixed(2)}`}
+                </span>
+                <div className="text-muted small mt-1">Rates come from server settings. Purchase requires inventory + fulfillment.</div>
               </div>
-              <button className="btn btn-primary w-100">Buy Now (Preview)</button>
+              <button className="btn btn-primary w-100" disabled>
+                Buy Now
+              </button>
             </div>
           )}
         </div>
@@ -78,4 +116,3 @@ export function CardsPage() {
     </div>
   )
 }
-

@@ -1,0 +1,163 @@
+import { Router } from "express";
+import { prisma } from "../prisma";
+import { requireAuth, signAccessToken, verifyPassword, type AuthenticatedRequest, hashPassword } from "../auth";
+import { loginSchema, signupSchema } from "../validators";
+import { writeAuditLog } from "../audit";
+
+export const consumerRouter = Router();
+
+consumerRouter.post("/auth/signup", async (req, res) => {
+  const parsed = signupSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "invalid_body" });
+    return;
+  }
+
+  const email = parsed.data.email.toLowerCase();
+  const exists = await prisma.user.findUnique({ where: { email } });
+  if (exists) {
+    res.status(409).json({ error: "email_in_use" });
+    return;
+  }
+
+  const passwordHash = await hashPassword(parsed.data.password);
+
+  const user = await prisma.user.create({
+    data: {
+      email,
+      phone: parsed.data.phone,
+      passwordHash,
+      role: "CONSUMER",
+      balance: { create: {} },
+      kycCases: { create: { status: "PENDING" } },
+    },
+  });
+
+  await writeAuditLog({
+    req,
+    actorId: user.id,
+    action: "consumer.signup",
+    entity: "User",
+    entityId: user.id,
+    after: { email: user.email },
+  });
+
+  const token = signAccessToken({ userId: user.id, role: user.role });
+  res.status(201).json({
+    token,
+    user: { id: user.id, email: user.email, role: user.role },
+  });
+});
+
+consumerRouter.post("/auth/login", async (req, res) => {
+  const parsed = loginSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "invalid_body" });
+    return;
+  }
+
+  const user = await prisma.user.findUnique({ where: { email: parsed.data.email.toLowerCase() } });
+  if (!user) {
+    res.status(401).json({ error: "invalid_credentials" });
+    return;
+  }
+  if (user.role !== "CONSUMER") {
+    res.status(403).json({ error: "not_consumer" });
+    return;
+  }
+  if (user.isFrozen) {
+    res.status(403).json({ error: "user_frozen" });
+    return;
+  }
+
+  const ok = await verifyPassword(parsed.data.password, user.passwordHash);
+  if (!ok) {
+    res.status(401).json({ error: "invalid_credentials" });
+    return;
+  }
+
+  await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+
+  await writeAuditLog({
+    req,
+    actorId: user.id,
+    action: "consumer.login",
+    entity: "User",
+    entityId: user.id,
+  });
+
+  const token = signAccessToken({ userId: user.id, role: user.role });
+  res.json({
+    token,
+    user: { id: user.id, email: user.email, role: user.role },
+  });
+});
+
+consumerRouter.get("/me", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.auth!.userId } });
+  if (!user || user.role !== "CONSUMER") {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+  res.json({
+    id: user.id,
+    email: user.email,
+    phone: user.phone,
+    mfaEnabled: user.mfaEnabled,
+    isFrozen: user.isFrozen,
+  });
+});
+
+consumerRouter.get("/balance", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const user = await prisma.user.findUnique({
+    where: { id: req.auth!.userId },
+    include: { balance: true },
+  });
+  if (!user || user.role !== "CONSUMER") {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+  const b = user.balance ?? (await prisma.balance.create({ data: { userId: user.id } }));
+  res.json({
+    usdCents: b.usdCents,
+    usdtCents: b.usdtCents,
+    btcSats: b.btcSats,
+    ethWei: b.ethWei,
+  });
+});
+
+consumerRouter.get("/kyc", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.auth!.userId } });
+  if (!user || user.role !== "CONSUMER") {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+  const latest = await prisma.kycCase.findFirst({
+    where: { userId: user.id },
+    orderBy: { createdAt: "desc" },
+  });
+  res.json({ status: latest?.status ?? "PENDING" });
+});
+
+consumerRouter.get("/transactions", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.auth!.userId } });
+  if (!user || user.role !== "CONSUMER") {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+  const items = await prisma.transaction.findMany({
+    where: { userId: user.id },
+    orderBy: { createdAt: "desc" },
+    take: 200,
+  });
+  res.json(
+    items.map((t) => ({
+      id: t.id,
+      type: t.type,
+      status: t.status,
+      asset: t.asset,
+      amountUsdCents: t.amountUsdCents,
+      createdAt: t.createdAt,
+    })),
+  );
+});

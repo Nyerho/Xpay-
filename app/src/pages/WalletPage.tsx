@@ -1,16 +1,45 @@
+import { useEffect, useState } from 'react'
+import { apiFetch } from '../api'
+import { useAuth } from '../auth/useAuth'
+
 export function WalletPage() {
-  const assets = [
-    { symbol: 'USD', name: 'USD Balance', amount: '1,248.20', sub: 'Spendable' },
-    { symbol: 'USDT', name: 'USDT (TRC20)', amount: '250.00', sub: '$250.00' },
-    { symbol: 'BTC', name: 'Bitcoin', amount: '0.0100', sub: '$582.00' },
-    { symbol: 'ETH', name: 'Ethereum', amount: '0.2000', sub: '$640.00' },
-  ]
+  const { token } = useAuth()
+  const [balance, setBalance] = useState<{ usdCents: number; usdtCents: number; btcSats: number; ethWei: string } | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!token) return
+    setLoading(true)
+    setError(null)
+    apiFetch<{ usdCents: number; usdtCents: number; btcSats: number; ethWei: string }>('/api/consumer/balance', { token })
+      .then(setBalance)
+      .catch((e: unknown) => {
+        const msg = e && typeof e === 'object' && 'error' in e ? String((e as { error: string }).error) : 'load_failed'
+        setError(msg)
+      })
+      .finally(() => setLoading(false))
+  }, [token])
+
+  const assets = balance
+    ? [
+        { symbol: 'USD', name: 'USD Balance', amount: (balance.usdCents / 100).toFixed(2), sub: 'Spendable' },
+        { symbol: 'USDT', name: 'USDT', amount: (balance.usdtCents / 100).toFixed(2), sub: 'TRC20 / ERC20' },
+        { symbol: 'BTC', name: 'Bitcoin', amount: String(balance.btcSats), sub: 'sats' },
+        { symbol: 'ETH', name: 'Ethereum', amount: balance.ethWei, sub: 'wei' },
+      ]
+    : []
 
   return (
     <div className="container">
       <div className="h4 mb-3">Wallet</div>
+      {error ? <div className="alert alert-danger py-2">{error}</div> : null}
       <div className="card shadow-sm">
         <div className="list-group list-group-flush">
+          {loading || !balance ? (
+            <div className="list-group-item text-muted">Loading…</div>
+          ) : null}
+          {!loading && balance && assets.length === 0 ? <div className="list-group-item text-muted">No assets</div> : null}
           {assets.map((a) => (
             <div key={a.symbol} className="list-group-item d-flex justify-content-between align-items-center">
               <div>
@@ -36,4 +65,3 @@ export function WalletPage() {
     </div>
   )
 }
-

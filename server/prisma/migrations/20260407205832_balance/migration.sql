@@ -1,0 +1,10 @@
+-- CreateTable
+CREATE TABLE "Balance" (
+    "userId" TEXT NOT NULL PRIMARY KEY,
+    "usdCents" INTEGER NOT NULL DEFAULT 0,
+    "usdtCents" INTEGER NOT NULL DEFAULT 0,
+    "btcSats" INTEGER NOT NULL DEFAULT 0,
+    "ethWei" TEXT NOT NULL DEFAULT '0',
+    "updatedAt" DATETIME NOT NULL,
+    CONSTRAINT "Balance_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
