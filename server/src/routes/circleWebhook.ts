@@ -1,0 +1,112 @@
+import type { RequestHandler } from "express";
+import { prisma } from "../prisma";
+import { circleFetchPublicKeyPem, circleVerifyWebhook } from "../circle";
+
+const publicKeyCache = new Map<string, { pem: string; fetchedAt: number }>();
+
+async function getCachedKeyPem(keyId: string) {
+  const now = Date.now();
+  const cached = publicKeyCache.get(keyId);
+  if (cached && now - cached.fetchedAt < 15 * 60 * 1000) return cached.pem;
+  const pem = await circleFetchPublicKeyPem({ keyId });
+  publicKeyCache.set(keyId, { pem, fetchedAt: now });
+  return pem;
+}
+
+function parseAmountToCents(amountStr: string) {
+  const [whole, frac = ""] = amountStr.split(".");
+  const fracPadded = (frac + "00").slice(0, 2);
+  const centsStr = (whole.replace(/^0+/, "") || "0") + fracPadded;
+  const cents = Number(centsStr);
+  if (!Number.isFinite(cents) || cents <= 0) return null;
+  return cents;
+}
+
+export const circleWebhookHandler: RequestHandler = async (req, res) => {
+  const sig = req.header("X-Circle-Signature");
+  const keyId = req.header("X-Circle-Key-Id");
+  if (!sig || !keyId) {
+    res.status(400).json({ error: "missing_signature" });
+    return;
+  }
+
+  const rawBody = Buffer.isBuffer(req.body) ? (req.body as Buffer) : Buffer.from("");
+  const pem = await getCachedKeyPem(keyId);
+  const ok = circleVerifyWebhook({ rawBody, signature: sig, publicKeyPem: pem });
+  if (!ok) {
+    res.status(401).json({ error: "invalid_signature" });
+    return;
+  }
+
+  const payloadStr = rawBody.toString("utf8");
+  let payload: any;
+  try {
+    payload = JSON.parse(payloadStr);
+  } catch {
+    res.status(400).json({ error: "invalid_json" });
+    return;
+  }
+
+  const notificationId = typeof payload?.notificationId === "string" ? payload.notificationId : null;
+  if (!notificationId) {
+    res.status(400).json({ error: "missing_notification_id" });
+    return;
+  }
+
+  try {
+    await prisma.externalWebhookEvent.create({
+      data: { provider: "circle", eventId: notificationId, payloadJson: payloadStr },
+    });
+  } catch {
+    res.json({ ok: true });
+    return;
+  }
+
+  const type = typeof payload?.notificationType === "string" ? payload.notificationType : null;
+  const n = payload?.notification;
+  if (type === "transactions.inbound" && n && typeof n === "object") {
+    const state = typeof n.state === "string" ? n.state : null;
+    const walletId = typeof n.walletId === "string" ? n.walletId : null;
+    const blockchain = typeof n.blockchain === "string" ? n.blockchain : null;
+    const txId = typeof n.id === "string" ? n.id : null;
+    const txHash = typeof n.txHash === "string" ? n.txHash : null;
+    const amounts = Array.isArray(n.amounts) ? (n.amounts as unknown[]) : [];
+    const amountStr = typeof amounts[0] === "string" ? (amounts[0] as string) : null;
+    const tokenSymbol =
+      (typeof n.token?.symbol === "string" ? (n.token.symbol as string) : null) ??
+      (typeof n.tokenSymbol === "string" ? (n.tokenSymbol as string) : null);
+
+    if (state === "COMPLETE" && walletId && amountStr && (tokenSymbol === "USDC" || tokenSymbol === "USD")) {
+      const wallet = await prisma.externalWallet.findFirst({ where: { provider: "circle", walletId } });
+      if (wallet) {
+        const cents = parseAmountToCents(amountStr);
+        if (cents) {
+          const externalRef = txId ? `circle:${txId}` : `circle:${notificationId}`;
+          try {
+            await prisma.$transaction(async (p) => {
+              await p.transaction.create({
+                data: {
+                  userId: wallet.userId,
+                  type: "DEPOSIT",
+                  status: "COMPLETE",
+                  asset: blockchain ? `USDC:${blockchain}` : "USDC",
+                  amountUsdCents: cents,
+                  externalRef,
+                  metadataJson: JSON.stringify({ provider: "circle", walletId, blockchain, txId, txHash, amount: amountStr }),
+                },
+              });
+              await p.balance.update({
+                where: { userId: wallet.userId },
+                data: { usdCents: { increment: cents } },
+              });
+            });
+          } catch {
+          }
+        }
+      }
+    }
+  }
+
+  res.json({ ok: true });
+};
+

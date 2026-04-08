@@ -71,6 +71,7 @@ model User {
   auditLogsAsActor     AuditLog[]          @relation("AuditActor")
   giftCardsReviewed    GiftCardSubmission[] @relation("GiftCardReviewedBy")
   kycReviewed          KycCase[]           @relation("KycReviewedBy")
+  externalWallets      ExternalWallet[]
 }
 
 model Balance {
@@ -145,6 +146,7 @@ model Transaction {
   asset         String?
   amountUsdCents Int?
   amountAssetMinor Int?
+  externalRef   String?  @unique
   metadataJson  String   @default("{}")
 
   createdAt DateTime @default(now())
@@ -156,6 +158,32 @@ model Setting {
   valueJson  String
   updatedAt  DateTime @updatedAt
   updatedById String?
+}
+
+model ExternalWallet {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider  String
+  walletId  String
+  blockchain String
+  address   String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([provider, walletId])
+  @@unique([userId, provider, blockchain])
+}
+
+model ExternalWebhookEvent {
+  id        String   @id @default(cuid())
+  provider  String
+  eventId   String
+  payloadJson String
+  createdAt DateTime @default(now())
+
+  @@unique([provider, eventId])
 }
 
 model AuditLog {

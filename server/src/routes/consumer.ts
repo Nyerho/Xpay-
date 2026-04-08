@@ -9,6 +9,7 @@ import {
   signupSchema,
 } from "../validators";
 import { writeAuditLog } from "../audit";
+import { circleCreateUserWallets, getCircleBlockchains, isCircleEnabled } from "../circle";
 
 export const consumerRouter = Router();
 
@@ -129,6 +130,46 @@ consumerRouter.get("/balance", requireAuth, async (req: AuthenticatedRequest, re
     usdtCents: b.usdtCents,
     btcSats: b.btcSats,
     ethWei: b.ethWei,
+  });
+});
+
+consumerRouter.get("/deposit-addresses", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.auth!.userId } });
+  if (!user || user.role !== "CONSUMER") {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+
+  if (!isCircleEnabled()) {
+    res.status(501).json({ error: "circle_not_configured" });
+    return;
+  }
+
+  const blockchains = getCircleBlockchains();
+  const existing = await prisma.externalWallet.findMany({
+    where: { userId: user.id, provider: "circle", blockchain: { in: blockchains } },
+  });
+
+  const missing = blockchains.filter((b) => !existing.some((e) => e.blockchain === b));
+  for (const blockchain of missing) {
+    const created = await circleCreateUserWallets({ blockchains: [blockchain] });
+    const w = created[0];
+    await prisma.externalWallet.upsert({
+      where: { userId_provider_blockchain: { userId: user.id, provider: "circle", blockchain } },
+      create: { userId: user.id, provider: "circle", walletId: w.walletId, blockchain: w.blockchain, address: w.address },
+      update: { walletId: w.walletId, address: w.address },
+    });
+  }
+
+  const all = await prisma.externalWallet.findMany({
+    where: { userId: user.id, provider: "circle", blockchain: { in: blockchains } },
+    orderBy: { blockchain: "asc" },
+  });
+
+  res.json({
+    provider: "circle",
+    asset: "USDC",
+    addresses: all.map((w) => ({ blockchain: w.blockchain, address: w.address })),
   });
 });
 

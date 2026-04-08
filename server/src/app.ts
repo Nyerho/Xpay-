@@ -4,11 +4,14 @@ import { authRouter } from "./routes/auth";
 import { adminRouter } from "./routes/admin";
 import { consumerRouter } from "./routes/consumer";
 import { publicRouter } from "./routes/public";
+import { circleWebhookHandler } from "./routes/circleWebhook";
 
 export function createApp() {
   const app = express();
 
   app.use(cors({ origin: true, credentials: true }));
+  app.head("/api/public/circle/webhook", (_req, res) => res.sendStatus(200));
+  app.post("/api/public/circle/webhook", express.raw({ type: "application/json" }), circleWebhookHandler);
   app.use(express.json({ limit: "2mb" }));
 
   app.get("/health", (_req, res) => res.json({ ok: true }));

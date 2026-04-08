@@ -19,6 +19,12 @@ type DepositInstructions = {
   }
 }
 
+type CircleDepositAddresses = {
+  provider: 'circle'
+  asset: string
+  addresses: Array<{ blockchain: string; address: string }>
+}
+
 type Rail = 'BANK' | 'BTC' | 'ETH' | 'TRC20' | 'ERC20'
 type Asset = 'USD' | 'USDT' | 'BTC' | 'ETH'
 
@@ -29,6 +35,8 @@ export function DepositPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [cfg, setCfg] = useState<DepositInstructions | null>(null)
+  const [circle, setCircle] = useState<CircleDepositAddresses | null>(null)
+  const [circleLoading, setCircleLoading] = useState(false)
 
   const [asset, setAsset] = useState<Asset>('USDT')
   const [rail, setRail] = useState<Rail>('TRC20')
@@ -51,6 +59,15 @@ export function DepositPage() {
       })
       .finally(() => setLoading(false))
   }, [])
+
+  useEffect(() => {
+    if (!token) return
+    setCircleLoading(true)
+    apiFetch<CircleDepositAddresses>('/api/consumer/deposit-addresses', { token })
+      .then((r) => setCircle(r))
+      .catch(() => setCircle(null))
+      .finally(() => setCircleLoading(false))
+  }, [token])
 
   const address = useMemo(() => {
     if (!cfg?.crypto) return null
@@ -92,95 +109,128 @@ export function DepositPage() {
       {tab === 'crypto' ? (
         <div className="card xpay-card shadow-sm">
           <div className="card-body">
-            <div className="row g-2">
-              <div className="col-6">
-                <label className="form-label">Asset</label>
-                <select className="form-select" value={asset} onChange={(e) => setAsset(e.target.value as Asset)}>
-                  <option value="USDT">USDT</option>
-                  <option value="BTC">BTC</option>
-                  <option value="ETH">ETH</option>
-                </select>
-              </div>
-              <div className="col-6">
-                <label className="form-label">Network</label>
-                <select
-                  className="form-select"
-                  value={rail}
-                  onChange={(e) => setRail(e.target.value as Rail)}
-                  disabled={asset === 'BTC' || asset === 'ETH'}
-                >
-                  {asset === 'USDT' ? (
-                    <>
-                      <option value="TRC20">TRC20</option>
-                      <option value="ERC20">ERC20</option>
-                    </>
-                  ) : asset === 'BTC' ? (
-                    <option value="BTC">Bitcoin</option>
-                  ) : (
-                    <option value="ETH">Ethereum</option>
-                  )}
-                </select>
-              </div>
-            </div>
+            {circle ? (
+              <>
+                <div className="fw-semibold mb-2">{circle.asset} deposit addresses</div>
+                {circle.addresses.map((a) => (
+                  <div key={a.blockchain} className="mb-3">
+                    <div className="text-muted small mb-1">{a.blockchain}</div>
+                    <div className="input-group">
+                      <input className="form-control font-monospace" readOnly value={a.address} />
+                      <button
+                        className="btn btn-outline-light"
+                        type="button"
+                        onClick={() => {
+                          void navigator.clipboard.writeText(a.address)
+                        }}
+                      >
+                        Copy
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                <div className="text-muted small">
+                  Deposits are credited automatically after confirmation. If you don’t see an address, contact support.
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="row g-2">
+                  <div className="col-6">
+                    <label className="form-label">Asset</label>
+                    <select className="form-select" value={asset} onChange={(e) => setAsset(e.target.value as Asset)}>
+                      <option value="USDT">USDT</option>
+                      <option value="BTC">BTC</option>
+                      <option value="ETH">ETH</option>
+                    </select>
+                  </div>
+                  <div className="col-6">
+                    <label className="form-label">Network</label>
+                    <select
+                      className="form-select"
+                      value={rail}
+                      onChange={(e) => setRail(e.target.value as Rail)}
+                      disabled={asset === 'BTC' || asset === 'ETH'}
+                    >
+                      {asset === 'USDT' ? (
+                        <>
+                          <option value="TRC20">TRC20</option>
+                          <option value="ERC20">ERC20</option>
+                        </>
+                      ) : asset === 'BTC' ? (
+                        <option value="BTC">Bitcoin</option>
+                      ) : (
+                        <option value="ETH">Ethereum</option>
+                      )}
+                    </select>
+                  </div>
+                </div>
 
-            <div className="mt-3">
-              <label className="form-label">Deposit address</label>
-              <div className="input-group">
-                <input className="form-control font-monospace" readOnly value={address ?? ''} placeholder={loading ? 'Loading…' : 'Not configured'} />
+                <div className="mt-3">
+                  <label className="form-label">Deposit address</label>
+                  <div className="input-group">
+                    <input
+                      className="form-control font-monospace"
+                      readOnly
+                      value={address ?? ''}
+                      placeholder={loading || circleLoading ? 'Loading…' : 'Not configured'}
+                    />
+                    <button
+                      className="btn btn-outline-light"
+                      type="button"
+                      disabled={!address}
+                      onClick={() => {
+                        if (!address) return
+                        void navigator.clipboard.writeText(address)
+                      }}
+                    >
+                      Copy
+                    </button>
+                  </div>
+                  <div className="text-muted small mt-2">
+                    Send only {asset} on the selected network. If deposit details are missing, configure them in Admin → Settings → depositInstructions.
+                  </div>
+                </div>
+
+                <hr className="border-secondary" />
+
+                <div className="fw-semibold mb-2">Submit deposit for credit</div>
+                <div className="row g-2">
+                  <div className="col-12 col-md-4">
+                    <label className="form-label">Amount</label>
+                    <input className="form-control" value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" />
+                  </div>
+                  <div className="col-12 col-md-8">
+                    <label className="form-label">Transaction hash</label>
+                    <input className="form-control font-monospace" value={txid} onChange={(e) => setTxid(e.target.value)} placeholder="Paste tx hash" />
+                  </div>
+                </div>
+
                 <button
-                  className="btn btn-outline-light"
+                  className="btn btn-primary w-100 mt-3"
+                  disabled={!token || busy || !address || !amount.trim() || !txid.trim()}
                   type="button"
-                  disabled={!address}
                   onClick={() => {
-                    if (!address) return
-                    void navigator.clipboard.writeText(address)
+                    if (!token) return
+                    setBusy(true)
+                    setError(null)
+                    apiFetch<{ id: string; status: string }>('/api/consumer/deposits', {
+                      method: 'POST',
+                      token,
+                      body: { asset, rail: asset === 'BTC' ? 'BTC' : asset === 'ETH' ? 'ETH' : rail, amount: amount.trim(), txid: txid.trim() },
+                    })
+                      .then(() => navigate('/activity'))
+                      .catch((e: unknown) => {
+                        const msg = e && typeof e === 'object' && 'error' in e ? String((e as { error: string }).error) : 'deposit_failed'
+                        setError(msg)
+                      })
+                      .finally(() => setBusy(false))
                   }}
                 >
-                  Copy
+                  {busy ? 'Submitting…' : 'Submit deposit'}
                 </button>
-              </div>
-              <div className="text-muted small mt-2">
-                Send only {asset} on the selected network. If deposit details are missing, configure them in Admin → Settings → depositInstructions.
-              </div>
-            </div>
-
-            <hr className="border-secondary" />
-
-            <div className="fw-semibold mb-2">Submit deposit for credit</div>
-            <div className="row g-2">
-              <div className="col-12 col-md-4">
-                <label className="form-label">Amount</label>
-                <input className="form-control" value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" />
-              </div>
-              <div className="col-12 col-md-8">
-                <label className="form-label">Transaction hash</label>
-                <input className="form-control font-monospace" value={txid} onChange={(e) => setTxid(e.target.value)} placeholder="Paste tx hash" />
-              </div>
-            </div>
-
-            <button
-              className="btn btn-primary w-100 mt-3"
-              disabled={!token || busy || !address || !amount.trim() || !txid.trim()}
-              type="button"
-              onClick={() => {
-                if (!token) return
-                setBusy(true)
-                setError(null)
-                apiFetch<{ id: string; status: string }>('/api/consumer/deposits', {
-                  method: 'POST',
-                  token,
-                  body: { asset, rail: asset === 'BTC' ? 'BTC' : asset === 'ETH' ? 'ETH' : rail, amount: amount.trim(), txid: txid.trim() },
-                })
-                  .then(() => navigate('/activity'))
-                  .catch((e: unknown) => {
-                    const msg = e && typeof e === 'object' && 'error' in e ? String((e as { error: string }).error) : 'deposit_failed'
-                    setError(msg)
-                  })
-                  .finally(() => setBusy(false))
-              }}
-            >
-              {busy ? 'Submitting…' : 'Submit deposit'}
-            </button>
+              </>
+            )}
           </div>
         </div>
       ) : (
@@ -253,4 +303,3 @@ export function DepositPage() {
     </div>
   )
 }
-

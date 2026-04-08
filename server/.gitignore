@@ -5,3 +5,4 @@ dev.db
 *.db
 
 /generated/prisma
+circle-output
