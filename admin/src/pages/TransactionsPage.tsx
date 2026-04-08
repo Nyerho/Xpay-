@@ -15,11 +15,14 @@ type Row = {
 }
 
 export function TransactionsPage() {
-  const { token } = useAuth()
+  const { token, me } = useAuth()
   const [q, setQ] = useState('')
   const [rows, setRows] = useState<Row[]>([])
   const [loading, setLoading] = useState(false)
+  const [settlingId, setSettlingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  const canSettle = me?.role === 'FINANCE' || me?.role === 'ADMIN' || me?.role === 'SUPERADMIN'
 
   function load() {
     if (!token) return
@@ -70,6 +73,7 @@ export function TransactionsPage() {
                 <th>Asset</th>
                 <th>USD</th>
                 <th>Created</th>
+                <th style={{ width: 160 }}>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -86,11 +90,34 @@ export function TransactionsPage() {
                   <td className="small">{r.asset ?? ''}</td>
                   <td className="small text-muted">{formatCents(r.amountUsdCents)}</td>
                   <td className="small text-muted">{formatDate(r.createdAt)}</td>
+                  <td>
+                    {canSettle && r.type === 'DEPOSIT' && r.status === 'PENDING' ? (
+                      <button
+                        className="btn btn-sm btn-primary"
+                        disabled={!token || settlingId === r.id}
+                        onClick={() => {
+                          if (!token) return
+                          setSettlingId(r.id)
+                          setError(null)
+                          apiFetch<{ ok: true }>(`/api/admin/transactions/${r.id}/settle`, { method: 'POST', token })
+                            .then(() => load())
+                            .catch((e: unknown) => {
+                              const msg =
+                                e && typeof e === 'object' && 'error' in e ? String((e as { error: string }).error) : 'settle_failed'
+                              setError(msg)
+                            })
+                            .finally(() => setSettlingId(null))
+                        }}
+                      >
+                        Settle
+                      </button>
+                    ) : null}
+                  </td>
                 </tr>
               ))}
               {rows.length === 0 && !loading ? (
                 <tr>
-                  <td colSpan={7} className="text-center text-muted py-4">
+                  <td colSpan={8} className="text-center text-muted py-4">
                     No transactions
                   </td>
                 </tr>
