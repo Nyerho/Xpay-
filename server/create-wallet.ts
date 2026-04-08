@@ -50,9 +50,10 @@ async function main() {
   const blockchain = process.env.CIRCLE_BLOCKCHAINS ?? "ARC-TESTNET";
   appendEnvLine("CIRCLE_BLOCKCHAINS", blockchain);
 
-  process.stdout.write(`CIRCLE_ENTITY_SECRET=${entitySecret}\n`);
+  process.stdout.write(`Wallet set created.\n`);
   process.stdout.write(`CIRCLE_WALLET_SET_ID=${walletSet.id}\n`);
   process.stdout.write(`CIRCLE_BLOCKCHAINS=${blockchain}\n`);
+  process.stdout.write(`Entity secret saved to .env and recovery file saved to circle-output.\n`);
 }
 
 main().catch((err) => {
