@@ -83,6 +83,43 @@ export async function circleCreateUserWallets(params: {
   return [{ walletId: wallet.id, address: wallet.address, blockchain: wallet.blockchain }];
 }
 
+function getUsdcTokenAddress(blockchain: string) {
+  const override = process.env.CIRCLE_USDC_TOKEN_ADDRESS;
+  if (override && override.trim().length > 0) return override.trim();
+  if (blockchain === "ARC-TESTNET") return "0x3600000000000000000000000000000000000000";
+  return null;
+}
+
+export async function circleCreateOutboundUsdcTransfer(params: {
+  blockchain: string;
+  walletId: string;
+  walletAddress: string;
+  destinationAddress: string;
+  amountUsdCents: number;
+}): Promise<{ id: string; state: string | null }> {
+  const cfg = getCircleConfig();
+  if (!cfg) throw new Error("circle_not_configured");
+  const tokenAddress = getUsdcTokenAddress(params.blockchain);
+  if (!tokenAddress) throw new Error("circle_usdc_token_unknown");
+
+  const { initiateDeveloperControlledWalletsClient } = await circleSdk();
+  const client = initiateDeveloperControlledWalletsClient({ apiKey: cfg.apiKey, entitySecret: cfg.entitySecret });
+
+  const resp = await client.createTransaction({
+    blockchain: params.blockchain as any,
+    walletAddress: params.walletAddress,
+    destinationAddress: params.destinationAddress,
+    amount: [(params.amountUsdCents / 100).toFixed(2)],
+    tokenAddress,
+    fee: { type: "level", config: { feeLevel: "MEDIUM" } },
+  } as any);
+
+  const id = resp.data?.id;
+  if (!id) throw new Error("circle_tx_create_failed");
+  const state = typeof resp.data?.state === "string" ? (resp.data.state as string) : null;
+  return { id, state };
+}
+
 export async function circleFetchPublicKeyPem(params: { keyId: string }) {
   const apiKey = getEnvRequired("CIRCLE_API_KEY");
   const url = `https://api.circle.com/v2/notifications/publicKey/${encodeURIComponent(params.keyId)}`;

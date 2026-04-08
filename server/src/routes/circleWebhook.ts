@@ -22,6 +22,14 @@ function parseAmountToCents(amountStr: string) {
   return cents;
 }
 
+function safeJsonParse(s: string) {
+  try {
+    return JSON.parse(s || "{}") as any;
+  } catch {
+    return {};
+  }
+}
+
 export const circleWebhookHandler: RequestHandler = async (req, res) => {
   try {
     const sig = req.header("X-Circle-Signature");
@@ -110,6 +118,37 @@ export const circleWebhookHandler: RequestHandler = async (req, res) => {
               });
             } catch {
             }
+          }
+        }
+      }
+    } else if (type === "transactions.outbound" && n && typeof n === "object") {
+      const state = typeof n.state === "string" ? n.state : null;
+      const txId = typeof n.id === "string" ? n.id : null;
+      const txHash = typeof n.txHash === "string" ? n.txHash : null;
+      const blockchain = typeof n.blockchain === "string" ? n.blockchain : null;
+
+      if (txId && (state === "COMPLETE" || state === "FAILED" || state === "CANCELLED" || state === "DENIED")) {
+        const externalRef = `circle:outbound:${txId}`;
+        const t = await prisma.transaction.findFirst({ where: { externalRef } });
+        if (t && t.type === "WITHDRAWAL" && t.status === "PENDING") {
+          const meta = safeJsonParse(t.metadataJson);
+          if (state === "COMPLETE") {
+            await prisma.transaction.update({
+              where: { id: t.id },
+              data: { status: "COMPLETE", metadataJson: JSON.stringify({ ...meta, circle: { txId, blockchain, txHash, state } }) },
+            });
+          } else {
+            const debited = Boolean(meta?.debited);
+            const usdCents = typeof t.amountUsdCents === "number" ? t.amountUsdCents : null;
+            await prisma.$transaction(async (p) => {
+              await p.transaction.update({
+                where: { id: t.id },
+                data: { status: "FAILED", metadataJson: JSON.stringify({ ...meta, circle: { txId, blockchain, txHash, state } }) },
+              });
+              if (debited && usdCents && usdCents > 0) {
+                await p.balance.update({ where: { userId: t.userId }, data: { usdCents: { increment: usdCents } } });
+              }
+            });
           }
         }
       }

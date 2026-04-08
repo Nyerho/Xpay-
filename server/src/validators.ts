@@ -89,3 +89,8 @@ export const consumerCryptoSellSchema = z.object({
   asset: z.enum(["USDT", "BTC", "ETH"]),
   amount: z.string().min(1).max(64),
 });
+
+export const consumerUsdcWithdrawalSchema = z.object({
+  usdCents: z.number().int().min(100),
+  address: z.string().min(12).max(256),
+});

@@ -6,6 +6,7 @@ import {
   consumerCryptoBuySchema,
   consumerCryptoSellSchema,
   consumerSwapRequestSchema,
+  consumerUsdcWithdrawalSchema,
   consumerWithdrawalRequestSchema,
   loginSchema,
   signupSchema,
@@ -661,6 +662,65 @@ consumerRouter.post("/withdrawals", requireAuth, async (req: AuthenticatedReques
     entity: "Transaction",
     entityId: tx.id,
     after: { asset, rail, amount },
+  });
+
+  res.status(201).json({ id: tx.id, status: tx.status });
+});
+
+consumerRouter.post("/withdrawals/usdc", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const parsed = consumerUsdcWithdrawalSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "invalid_body" });
+    return;
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: req.auth!.userId },
+    include: { balance: true },
+  });
+  if (!user || user.role !== "CONSUMER") {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+  if (user.isFrozen) {
+    res.status(403).json({ error: "user_frozen" });
+    return;
+  }
+  const kycOk = await requireKycApproved(user.id);
+  if (!kycOk) {
+    res.status(403).json({ error: "kyc_required" });
+    return;
+  }
+
+  const b = user.balance ?? (await prisma.balance.create({ data: { userId: user.id } }));
+  const { usdCents, address } = parsed.data;
+  if (b.usdCents < usdCents) {
+    res.status(409).json({ error: "insufficient_funds" });
+    return;
+  }
+
+  const tx = await prisma.transaction.create({
+    data: {
+      userId: user.id,
+      type: "WITHDRAWAL",
+      status: "PENDING",
+      asset: "USD:USDC",
+      amountUsdCents: usdCents,
+      metadataJson: JSON.stringify({
+        amount: (usdCents / 100).toFixed(2),
+        address,
+        rail: "USDC",
+      }),
+    },
+  });
+
+  await writeAuditLog({
+    req,
+    actorId: user.id,
+    action: "consumer.withdrawal.usdc.request",
+    entity: "Transaction",
+    entityId: tx.id,
+    after: { usdCents },
   });
 
   res.status(201).json({ id: tx.id, status: tx.status });

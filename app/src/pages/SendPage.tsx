@@ -1,22 +1,25 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../api'
 import { useAuth } from '../auth/useAuth'
 
-const assets = ['USDT', 'BTC', 'ETH'] as const
-type Asset = (typeof assets)[number]
-type Rail = 'TRC20' | 'ERC20' | 'BTC' | 'ETH'
-
 export function SendPage() {
   const { token } = useAuth()
   const navigate = useNavigate()
-  const [asset, setAsset] = useState<Asset>('USDT')
-  const [rail, setRail] = useState<Rail>('TRC20')
-  const [amount, setAmount] = useState('')
+  const [amountUsd, setAmountUsd] = useState('')
   const [address, setAddress] = useState('')
   const [memo, setMemo] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const usdCents = useMemo(() => {
+    const m = amountUsd.trim().match(/^(\d+)(?:\.(\d{0,2}))?$/)
+    if (!m) return null
+    const whole = Number(m[1] ?? '0')
+    const frac = String(m[2] ?? '').padEnd(2, '0')
+    const cents = whole * 100 + Number(frac || '0')
+    return Number.isFinite(cents) && cents >= 100 ? cents : null
+  }, [amountUsd])
 
   return (
     <div className="container xpay-fade-in" style={{ maxWidth: 760 }}>
@@ -31,53 +34,11 @@ export function SendPage() {
 
       <div className="card xpay-card shadow-sm">
         <div className="card-body">
-          <div className="row g-2">
-            <div className="col-6">
-              <label className="form-label">Asset</label>
-              <select
-                className="form-select"
-                value={asset}
-                onChange={(e) => {
-                  const next = e.target.value as Asset
-                  setAsset(next)
-                  if (next === 'BTC') setRail('BTC')
-                  if (next === 'ETH') setRail('ETH')
-                  if (next === 'USDT') setRail('TRC20')
-                }}
-              >
-                {assets.map((a) => (
-                  <option key={a} value={a}>
-                    {a}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="col-6">
-              <label className="form-label">Network</label>
-              <select
-                className="form-select"
-                value={rail}
-                onChange={(e) => setRail(e.target.value as Rail)}
-                disabled={asset === 'BTC' || asset === 'ETH'}
-              >
-                {asset === 'USDT' ? (
-                  <>
-                    <option value="TRC20">TRC20</option>
-                    <option value="ERC20">ERC20</option>
-                  </>
-                ) : asset === 'BTC' ? (
-                  <option value="BTC">Bitcoin</option>
-                ) : (
-                  <option value="ETH">Ethereum</option>
-                )}
-              </select>
-            </div>
-          </div>
-
           <div className="row g-2 mt-2">
             <div className="col-12 col-md-4">
-              <label className="form-label">Amount</label>
-              <input className="form-control" value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" />
+              <label className="form-label">Amount (USD)</label>
+              <input className="form-control" value={amountUsd} onChange={(e) => setAmountUsd(e.target.value)} inputMode="decimal" />
+              <div className="text-muted small mt-1">Sent as USDC on the configured network.</div>
             </div>
             <div className="col-12 col-md-8">
               <label className="form-label">Destination address</label>
@@ -91,21 +52,21 @@ export function SendPage() {
           </div>
 
           <div className="text-muted small mt-2">
-            Submitting creates a withdrawal request. A finance operator reviews and settles withdrawals.
+            Submitting creates a withdrawal request. Finance submits the on-chain transfer via Circle and it completes automatically.
           </div>
 
           <button
             className="btn btn-primary w-100 mt-3"
-            disabled={!token || busy || !amount.trim() || !address.trim()}
+            disabled={!token || busy || !usdCents || !address.trim()}
             type="button"
             onClick={() => {
-              if (!token) return
+              if (!token || !usdCents) return
               setBusy(true)
               setError(null)
-              apiFetch<{ id: string; status: string }>('/api/consumer/withdrawals', {
+              apiFetch<{ id: string; status: string }>('/api/consumer/withdrawals/usdc', {
                 method: 'POST',
                 token,
-                body: { asset, rail: asset === 'BTC' ? 'BTC' : asset === 'ETH' ? 'ETH' : rail, amount: amount.trim(), address: address.trim(), memo: memo.trim() || undefined },
+                body: { usdCents, address: address.trim(), memo: memo.trim() || undefined },
               })
                 .then(() => navigate('/activity'))
                 .catch((e: unknown) => {
@@ -122,4 +83,3 @@ export function SendPage() {
     </div>
   )
 }
-

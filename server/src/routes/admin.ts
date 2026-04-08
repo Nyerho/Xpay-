@@ -14,6 +14,7 @@ import {
 } from "../validators";
 import { hashPassword } from "../auth";
 import { writeAuditLog } from "../audit";
+import { circleCreateOutboundUsdcTransfer, getCircleBlockchains, isCircleEnabled } from "../circle";
 
 export const adminRouter = Router();
 
@@ -453,6 +454,10 @@ adminRouter.post("/transactions/:id/settle", requireMinRole("FINANCE"), async (r
     res.status(409).json({ error: "not_pending" });
     return;
   }
+  if (tx.type === "WITHDRAWAL" && tx.externalRef) {
+    res.status(409).json({ error: "already_submitted" });
+    return;
+  }
 
   let meta: any = {};
   try {
@@ -514,40 +519,74 @@ adminRouter.post("/transactions/:id/settle", requireMinRole("FINANCE"), async (r
     }
     const current = BigInt(balance.ethWei || "0");
     updateBalance.ethWei = (current + wei).toString();
-  } else if (tx.type === "WITHDRAWAL" && asset === "USDT" && (rail === "TRC20" || rail === "ERC20")) {
+  } else if (tx.type === "WITHDRAWAL") {
+    if (asset !== "USD") {
+      res.status(400).json({ error: "unsupported_asset" });
+      return;
+    }
+    const dest = typeof meta.address === "string" ? meta.address.trim() : "";
+    if (!dest) {
+      res.status(400).json({ error: "missing_destination" });
+      return;
+    }
+
     const cents = Number(parseToMinor(amountStr, 2));
     if (!Number.isFinite(cents) || cents <= 0) {
       res.status(400).json({ error: "invalid_amount" });
       return;
     }
-    if (balance.usdtCents < cents) {
+    if (balance.usdCents < cents) {
       res.status(409).json({ error: "insufficient_funds" });
       return;
     }
-    updateBalance.usdtCents = balance.usdtCents - cents;
-  } else if (tx.type === "WITHDRAWAL" && asset === "BTC" && rail === "BTC") {
-    const sats = Number(parseToMinor(amountStr, 8));
-    if (!Number.isFinite(sats) || sats <= 0 || sats > 2_000_000_000) {
-      res.status(400).json({ error: "invalid_amount" });
+
+    if (!isCircleEnabled()) {
+      res.status(501).json({ error: "circle_not_configured" });
       return;
     }
-    if (balance.btcSats < sats) {
-      res.status(409).json({ error: "insufficient_funds" });
+
+    const blockchain = getCircleBlockchains()[0];
+    if (!blockchain) {
+      res.status(501).json({ error: "circle_not_configured" });
       return;
     }
-    updateBalance.btcSats = balance.btcSats - sats;
-  } else if (tx.type === "WITHDRAWAL" && asset === "ETH" && rail === "ETH") {
-    const wei = BigInt(parseToMinor(amountStr, 18));
-    if (wei <= 0n) {
-      res.status(400).json({ error: "invalid_amount" });
+
+    const userWallet = await prisma.externalWallet.findFirst({ where: { provider: "circle", userId: user.id, blockchain } });
+    if (!userWallet) {
+      res.status(409).json({ error: "no_custody_wallet" });
       return;
     }
-    const current = BigInt(balance.ethWei || "0");
-    if (current < wei) {
-      res.status(409).json({ error: "insufficient_funds" });
-      return;
-    }
-    updateBalance.ethWei = (current - wei).toString();
+
+    const circleTx = await circleCreateOutboundUsdcTransfer({
+      blockchain,
+      walletId: userWallet.walletId,
+      walletAddress: userWallet.address,
+      destinationAddress: dest,
+      amountUsdCents: cents,
+    });
+
+    await prisma.$transaction(async (p) => {
+      await p.balance.update({ where: { userId: balance.userId }, data: { usdCents: { decrement: cents } } });
+      await p.transaction.update({
+        where: { id: tx.id },
+        data: {
+          externalRef: `circle:outbound:${circleTx.id}`,
+          metadataJson: JSON.stringify({ ...meta, debited: true, circle: { txId: circleTx.id, blockchain, state: circleTx.state } }),
+        },
+      });
+    });
+
+    await writeAuditLog({
+      req,
+      actorId: req.auth!.userId,
+      action: "admin.withdrawal.submit",
+      entity: "Transaction",
+      entityId: tx.id,
+      after: { status: "PENDING", externalRef: `circle:outbound:${circleTx.id}` },
+    });
+
+    res.json({ ok: true });
+    return;
   } else {
     res.status(400).json({ error: "unsupported_asset" });
     return;
