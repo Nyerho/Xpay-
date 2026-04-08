@@ -441,12 +441,16 @@ adminRouter.post("/transactions/:id/settle", requireMinRole("FINANCE"), async (r
     res.status(404).json({ error: "not_found" });
     return;
   }
-  if (tx.type !== "DEPOSIT") {
-    res.status(400).json({ error: "not_deposit" });
+  if (!(tx.type === "DEPOSIT" || tx.type === "WITHDRAWAL")) {
+    res.status(400).json({ error: "unsupported_type" });
     return;
   }
   if (tx.status === "COMPLETE") {
     res.status(409).json({ error: "already_complete" });
+    return;
+  }
+  if (tx.status !== "PENDING") {
+    res.status(409).json({ error: "not_pending" });
     return;
   }
 
@@ -481,28 +485,28 @@ adminRouter.post("/transactions/:id/settle", requireMinRole("FINANCE"), async (r
   }
 
   const updateBalance: Record<string, any> = {};
-  if (asset === "USD" && rail === "BANK") {
+  if (tx.type === "DEPOSIT" && asset === "USD" && rail === "BANK") {
     const cents = Number(parseToMinor(amountStr, 2));
     if (!Number.isFinite(cents) || cents <= 0) {
       res.status(400).json({ error: "invalid_amount" });
       return;
     }
     updateBalance.usdCents = balance.usdCents + cents;
-  } else if (asset === "USDT" && (rail === "TRC20" || rail === "ERC20")) {
+  } else if (tx.type === "DEPOSIT" && asset === "USDT" && (rail === "TRC20" || rail === "ERC20")) {
     const cents = Number(parseToMinor(amountStr, 2));
     if (!Number.isFinite(cents) || cents <= 0) {
       res.status(400).json({ error: "invalid_amount" });
       return;
     }
     updateBalance.usdtCents = balance.usdtCents + cents;
-  } else if (asset === "BTC" && rail === "BTC") {
+  } else if (tx.type === "DEPOSIT" && asset === "BTC" && rail === "BTC") {
     const sats = Number(parseToMinor(amountStr, 8));
     if (!Number.isFinite(sats) || sats <= 0 || sats > 2_000_000_000) {
       res.status(400).json({ error: "invalid_amount" });
       return;
     }
     updateBalance.btcSats = balance.btcSats + sats;
-  } else if (asset === "ETH" && rail === "ETH") {
+  } else if (tx.type === "DEPOSIT" && asset === "ETH" && rail === "ETH") {
     const wei = BigInt(parseToMinor(amountStr, 18));
     if (wei <= 0n) {
       res.status(400).json({ error: "invalid_amount" });
@@ -510,6 +514,40 @@ adminRouter.post("/transactions/:id/settle", requireMinRole("FINANCE"), async (r
     }
     const current = BigInt(balance.ethWei || "0");
     updateBalance.ethWei = (current + wei).toString();
+  } else if (tx.type === "WITHDRAWAL" && asset === "USDT" && (rail === "TRC20" || rail === "ERC20")) {
+    const cents = Number(parseToMinor(amountStr, 2));
+    if (!Number.isFinite(cents) || cents <= 0) {
+      res.status(400).json({ error: "invalid_amount" });
+      return;
+    }
+    if (balance.usdtCents < cents) {
+      res.status(409).json({ error: "insufficient_funds" });
+      return;
+    }
+    updateBalance.usdtCents = balance.usdtCents - cents;
+  } else if (tx.type === "WITHDRAWAL" && asset === "BTC" && rail === "BTC") {
+    const sats = Number(parseToMinor(amountStr, 8));
+    if (!Number.isFinite(sats) || sats <= 0 || sats > 2_000_000_000) {
+      res.status(400).json({ error: "invalid_amount" });
+      return;
+    }
+    if (balance.btcSats < sats) {
+      res.status(409).json({ error: "insufficient_funds" });
+      return;
+    }
+    updateBalance.btcSats = balance.btcSats - sats;
+  } else if (tx.type === "WITHDRAWAL" && asset === "ETH" && rail === "ETH") {
+    const wei = BigInt(parseToMinor(amountStr, 18));
+    if (wei <= 0n) {
+      res.status(400).json({ error: "invalid_amount" });
+      return;
+    }
+    const current = BigInt(balance.ethWei || "0");
+    if (current < wei) {
+      res.status(409).json({ error: "insufficient_funds" });
+      return;
+    }
+    updateBalance.ethWei = (current - wei).toString();
   } else {
     res.status(400).json({ error: "unsupported_asset" });
     return;
@@ -523,7 +561,7 @@ adminRouter.post("/transactions/:id/settle", requireMinRole("FINANCE"), async (r
   await writeAuditLog({
     req,
     actorId: req.auth!.userId,
-    action: "admin.deposit.settle",
+    action: tx.type === "DEPOSIT" ? "admin.deposit.settle" : "admin.withdrawal.settle",
     entity: "Transaction",
     entityId: tx.id,
     after: { status: "COMPLETE", asset: tx.asset, amount: amountStr },

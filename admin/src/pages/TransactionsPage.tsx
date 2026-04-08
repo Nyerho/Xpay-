@@ -91,7 +91,7 @@ export function TransactionsPage() {
                   <td className="small text-muted">{formatCents(r.amountUsdCents)}</td>
                   <td className="small text-muted">{formatDate(r.createdAt)}</td>
                   <td>
-                    {canSettle && r.type === 'DEPOSIT' && r.status === 'PENDING' ? (
+                    {canSettle && (r.type === 'DEPOSIT' || r.type === 'WITHDRAWAL') && r.status === 'PENDING' ? (
                       <button
                         className="btn btn-sm btn-primary"
                         disabled={!token || settlingId === r.id}

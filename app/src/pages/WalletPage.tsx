@@ -62,7 +62,9 @@ export function WalletPage() {
           </Link>
         </div>
         <div className="col-6">
-          <button className="btn btn-primary w-100">Send</button>
+          <Link className="btn btn-primary w-100" to="/send">
+            Send
+          </Link>
         </div>
       </div>
     </div>
