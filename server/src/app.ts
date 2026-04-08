@@ -10,6 +10,7 @@ export function createApp() {
   const app = express();
 
   app.use(cors({ origin: true, credentials: true }));
+  app.get("/api/public/circle/webhook", (_req, res) => res.status(200).send("ok"));
   app.head("/api/public/circle/webhook", (_req, res) => res.sendStatus(200));
   app.post("/api/public/circle/webhook", express.raw({ type: "application/json" }), circleWebhookHandler);
   app.use(express.json({ limit: "2mb" }));
