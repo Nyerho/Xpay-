@@ -33,8 +33,8 @@ export const circleWebhookHandler: RequestHandler = async (req, res) => {
 
     const rawBody = Buffer.isBuffer(req.body) ? (req.body as Buffer) : Buffer.from("");
     const pem = await getCachedKeyPem(keyId);
-    const ok = circleVerifyWebhook({ rawBody, signature: sig, publicKeyPem: pem });
-    if (!ok) {
+    const verify = circleVerifyWebhook({ rawBody, signature: sig, publicKeyPem: pem });
+    if (!verify.ok) {
       res.status(401).json({ error: "invalid_signature" });
       return;
     }
