@@ -79,3 +79,13 @@ export const consumerWithdrawalRequestSchema = z.object({
   address: z.string().min(12).max(256),
   memo: z.string().min(1).max(128).optional(),
 });
+
+export const consumerCryptoBuySchema = z.object({
+  asset: z.enum(["USDT", "BTC", "ETH"]),
+  usdCents: z.number().int().min(100),
+});
+
+export const consumerCryptoSellSchema = z.object({
+  asset: z.enum(["USDT", "BTC", "ETH"]),
+  amount: z.string().min(1).max(64),
+});

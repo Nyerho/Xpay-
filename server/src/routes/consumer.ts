@@ -3,6 +3,8 @@ import { prisma } from "../prisma";
 import { requireAuth, signAccessToken, verifyPassword, type AuthenticatedRequest, hashPassword } from "../auth";
 import {
   consumerDepositRequestSchema,
+  consumerCryptoBuySchema,
+  consumerCryptoSellSchema,
   consumerSwapRequestSchema,
   consumerWithdrawalRequestSchema,
   loginSchema,
@@ -12,6 +14,61 @@ import { writeAuditLog } from "../audit";
 import { circleCreateUserWallets, getCircleBlockchains, isCircleEnabled } from "../circle";
 
 export const consumerRouter = Router();
+
+function parseDecimalToBigInt(amount: string, decimals: number) {
+  const m = amount.trim().match(/^(\d+)(?:\.(\d+))?$/);
+  if (!m) return null;
+  const whole = m[1] ?? "0";
+  const frac = (m[2] ?? "").slice(0, decimals);
+  const fracPadded = frac + "0".repeat(decimals - frac.length);
+  const digits = (whole.replace(/^0+/, "") || "0") + fracPadded;
+  try {
+    return BigInt(digits);
+  } catch {
+    return null;
+  }
+}
+
+function calcPriceCents(midUsd: number, bps: number, side: "buy" | "sell") {
+  const midCents = Math.round(midUsd * 100);
+  const mult = side === "buy" ? 10000 + bps : 10000 - bps;
+  return Math.floor((midCents * mult) / 10000);
+}
+
+async function getQuotes() {
+  const s = await prisma.setting.findUnique({ where: { key: "spreads" } });
+  if (!s) return null;
+  let parsed: any = {};
+  try {
+    parsed = JSON.parse(s.valueJson || "{}");
+  } catch {
+    parsed = {};
+  }
+
+  function q(asset: "USDT" | "BTC" | "ETH") {
+    const midUsd = typeof parsed?.[asset]?.midUsd === "number" ? parsed[asset].midUsd : null;
+    const buyBps = typeof parsed?.[asset]?.buyBps === "number" ? parsed[asset].buyBps : 0;
+    const sellBps = typeof parsed?.[asset]?.sellBps === "number" ? parsed[asset].sellBps : 0;
+    if (!midUsd || !Number.isFinite(midUsd) || midUsd <= 0) return null;
+    return {
+      midUsd,
+      buyBps,
+      sellBps,
+      buyPriceUsdCents: calcPriceCents(midUsd, buyBps, "buy"),
+      sellPriceUsdCents: calcPriceCents(midUsd, sellBps, "sell"),
+    };
+  }
+
+  return { updatedAt: s.updatedAt, USDT: q("USDT"), BTC: q("BTC"), ETH: q("ETH") };
+}
+
+async function requireKycApproved(userId: string) {
+  const required = process.env.TRADING_REQUIRE_KYC === "true";
+  if (!required) return true;
+  const latest = await prisma.kycCase.findFirst({ where: { userId }, orderBy: { createdAt: "desc" } });
+  if (!latest || latest.status !== "APPROVED") return false;
+  return true;
+}
 
 consumerRouter.post("/auth/signup", async (req, res) => {
   const parsed = signupSchema.safeParse(req.body);
@@ -207,6 +264,239 @@ consumerRouter.get("/transactions", requireAuth, async (req: AuthenticatedReques
       createdAt: t.createdAt,
     })),
   );
+});
+
+consumerRouter.post("/trade/buy", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const parsed = consumerCryptoBuySchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "invalid_body" });
+    return;
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: req.auth!.userId },
+    include: { balance: true },
+  });
+  if (!user || user.role !== "CONSUMER") {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+  if (user.isFrozen) {
+    res.status(403).json({ error: "user_frozen" });
+    return;
+  }
+  const kycOk = await requireKycApproved(user.id);
+  if (!kycOk) {
+    res.status(403).json({ error: "kyc_required" });
+    return;
+  }
+
+  const quotes = await getQuotes();
+  if (!quotes) {
+    res.status(503).json({ error: "quotes_unavailable" });
+    return;
+  }
+
+  const { asset, usdCents } = parsed.data;
+  const q = quotes[asset];
+  if (!q) {
+    res.status(503).json({ error: "quotes_unavailable" });
+    return;
+  }
+
+  const b = user.balance ?? (await prisma.balance.create({ data: { userId: user.id } }));
+  if (b.usdCents < usdCents) {
+    res.status(409).json({ error: "insufficient_funds" });
+    return;
+  }
+
+  const priceCents = q.buyPriceUsdCents;
+  if (priceCents <= 0) {
+    res.status(503).json({ error: "quotes_unavailable" });
+    return;
+  }
+
+  let assetMinor: bigint;
+  let decimals: number;
+  if (asset === "USDT") {
+    decimals = 2;
+    assetMinor = (BigInt(usdCents) * 100n) / BigInt(priceCents);
+  } else if (asset === "BTC") {
+    decimals = 8;
+    assetMinor = (BigInt(usdCents) * 100000000n) / BigInt(priceCents);
+  } else {
+    decimals = 18;
+    assetMinor = (BigInt(usdCents) * 1000000000000000000n) / BigInt(priceCents);
+  }
+
+  if (assetMinor <= 0n) {
+    res.status(400).json({ error: "amount_too_small" });
+    return;
+  }
+  if (asset === "USDT" && assetMinor > 2_000_000_000n) {
+    res.status(400).json({ error: "amount_too_large" });
+    return;
+  }
+  if (asset === "BTC" && assetMinor > 2_000_000_000n) {
+    res.status(400).json({ error: "amount_too_large" });
+    return;
+  }
+
+  await prisma.$transaction(async (p) => {
+    if (asset === "USDT") {
+      await p.balance.update({ where: { userId: b.userId }, data: { usdCents: { decrement: usdCents }, usdtCents: { increment: Number(assetMinor) } } });
+    } else if (asset === "BTC") {
+      await p.balance.update({ where: { userId: b.userId }, data: { usdCents: { decrement: usdCents }, btcSats: { increment: Number(assetMinor) } } });
+    } else {
+      const current = BigInt(b.ethWei || "0");
+      await p.balance.update({ where: { userId: b.userId }, data: { usdCents: { decrement: usdCents }, ethWei: (current + assetMinor).toString() } });
+    }
+
+    await p.transaction.create({
+      data: {
+        userId: user.id,
+        type: "CRYPTO_BUY",
+        status: "COMPLETE",
+        asset,
+        amountUsdCents: usdCents,
+        amountAssetMinor: asset === "ETH" ? null : Number(assetMinor),
+        metadataJson: JSON.stringify({ side: "buy", priceUsdCents: priceCents, decimals, quoteUpdatedAt: quotes.updatedAt }),
+      },
+    });
+  });
+
+  await writeAuditLog({
+    req,
+    actorId: user.id,
+    action: "consumer.trade.buy",
+    entity: "Transaction",
+    after: { asset, usdCents },
+  });
+
+  res.json({ ok: true });
+});
+
+consumerRouter.post("/trade/sell", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const parsed = consumerCryptoSellSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "invalid_body" });
+    return;
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: req.auth!.userId },
+    include: { balance: true },
+  });
+  if (!user || user.role !== "CONSUMER") {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+  if (user.isFrozen) {
+    res.status(403).json({ error: "user_frozen" });
+    return;
+  }
+  const kycOk = await requireKycApproved(user.id);
+  if (!kycOk) {
+    res.status(403).json({ error: "kyc_required" });
+    return;
+  }
+
+  const quotes = await getQuotes();
+  if (!quotes) {
+    res.status(503).json({ error: "quotes_unavailable" });
+    return;
+  }
+
+  const { asset, amount } = parsed.data;
+  const q = quotes[asset];
+  if (!q) {
+    res.status(503).json({ error: "quotes_unavailable" });
+    return;
+  }
+
+  const b = user.balance ?? (await prisma.balance.create({ data: { userId: user.id } }));
+  const priceCents = q.sellPriceUsdCents;
+  if (priceCents <= 0) {
+    res.status(503).json({ error: "quotes_unavailable" });
+    return;
+  }
+
+  let decimals: number;
+  let assetMinor: bigint;
+  if (asset === "USDT") {
+    decimals = 2;
+    assetMinor = parseDecimalToBigInt(amount, decimals) ?? -1n;
+    if (assetMinor <= 0n) {
+      res.status(400).json({ error: "invalid_amount" });
+      return;
+    }
+    if (b.usdtCents < Number(assetMinor)) {
+      res.status(409).json({ error: "insufficient_funds" });
+      return;
+    }
+  } else if (asset === "BTC") {
+    decimals = 8;
+    assetMinor = parseDecimalToBigInt(amount, decimals) ?? -1n;
+    if (assetMinor <= 0n) {
+      res.status(400).json({ error: "invalid_amount" });
+      return;
+    }
+    if (b.btcSats < Number(assetMinor)) {
+      res.status(409).json({ error: "insufficient_funds" });
+      return;
+    }
+  } else {
+    decimals = 18;
+    assetMinor = parseDecimalToBigInt(amount, decimals) ?? -1n;
+    if (assetMinor <= 0n) {
+      res.status(400).json({ error: "invalid_amount" });
+      return;
+    }
+    const current = BigInt(b.ethWei || "0");
+    if (current < assetMinor) {
+      res.status(409).json({ error: "insufficient_funds" });
+      return;
+    }
+  }
+
+  const usdCents = Number((assetMinor * BigInt(priceCents)) / (asset === "USDT" ? 100n : asset === "BTC" ? 100000000n : 1000000000000000000n));
+  if (!Number.isFinite(usdCents) || usdCents <= 0) {
+    res.status(400).json({ error: "amount_too_small" });
+    return;
+  }
+
+  await prisma.$transaction(async (p) => {
+    if (asset === "USDT") {
+      await p.balance.update({ where: { userId: b.userId }, data: { usdtCents: { decrement: Number(assetMinor) }, usdCents: { increment: usdCents } } });
+    } else if (asset === "BTC") {
+      await p.balance.update({ where: { userId: b.userId }, data: { btcSats: { decrement: Number(assetMinor) }, usdCents: { increment: usdCents } } });
+    } else {
+      const current = BigInt(b.ethWei || "0");
+      await p.balance.update({ where: { userId: b.userId }, data: { ethWei: (current - assetMinor).toString(), usdCents: { increment: usdCents } } });
+    }
+
+    await p.transaction.create({
+      data: {
+        userId: user.id,
+        type: "CRYPTO_SELL",
+        status: "COMPLETE",
+        asset,
+        amountUsdCents: usdCents,
+        amountAssetMinor: asset === "ETH" ? null : Number(assetMinor),
+        metadataJson: JSON.stringify({ side: "sell", priceUsdCents: priceCents, decimals, quoteUpdatedAt: quotes.updatedAt }),
+      },
+    });
+  });
+
+  await writeAuditLog({
+    req,
+    actorId: user.id,
+    action: "consumer.trade.sell",
+    entity: "Transaction",
+    after: { asset, amount },
+  });
+
+  res.json({ ok: true });
 });
 
 consumerRouter.post("/swap", requireAuth, async (req: AuthenticatedRequest, res) => {

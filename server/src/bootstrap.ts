@@ -21,7 +21,14 @@ export async function bootstrap() {
 
   await prisma.setting.upsert({
     where: { key: "spreads" },
-    create: { key: "spreads", valueJson: JSON.stringify({ fixedSpreadBps: 200, quoteLockSeconds: 900 }) },
+    create: {
+      key: "spreads",
+      valueJson: JSON.stringify({
+        USDT: { midUsd: 1, buyBps: 50, sellBps: 50 },
+        BTC: { midUsd: 70000, buyBps: 200, sellBps: 200 },
+        ETH: { midUsd: 3500, buyBps: 200, sellBps: 200 },
+      }),
+    },
     update: {},
   });
 
