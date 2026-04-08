@@ -12,7 +12,13 @@ export function createApp() {
   app.use(express.json({ limit: "2mb" }));
 
   app.get("/health", (_req, res) => res.json({ ok: true }));
-  app.get("/api/health", (_req, res) => res.json({ ok: true }));
+  app.get("/api/health", (_req, res) =>
+    res.json({
+      ok: true,
+      env: process.env.NODE_ENV ?? null,
+      commit: process.env.RENDER_GIT_COMMIT ?? null,
+    }),
+  );
   app.use("/api/public", publicRouter);
   app.use("/api/auth", authRouter);
   app.use("/api/admin", adminRouter);
