@@ -19,18 +19,50 @@ export async function bootstrap() {
     });
   }
 
+  const defaultSpreads = {
+    USDT: { midUsd: 1, buyBps: 50, sellBps: 50 },
+    BTC: { midUsd: 70000, buyBps: 200, sellBps: 200 },
+    ETH: { midUsd: 3500, buyBps: 200, sellBps: 200 },
+  };
+
   await prisma.setting.upsert({
     where: { key: "spreads" },
     create: {
       key: "spreads",
-      valueJson: JSON.stringify({
-        USDT: { midUsd: 1, buyBps: 50, sellBps: 50 },
-        BTC: { midUsd: 70000, buyBps: 200, sellBps: 200 },
-        ETH: { midUsd: 3500, buyBps: 200, sellBps: 200 },
-      }),
+      valueJson: JSON.stringify(defaultSpreads),
     },
     update: {},
   });
+
+  const spreads = await prisma.setting.findUnique({ where: { key: "spreads" } });
+  if (spreads) {
+    try {
+      const v = JSON.parse(spreads.valueJson || "{}") as any;
+      const hasNewFormat = typeof v?.USDT === "object" || typeof v?.BTC === "object" || typeof v?.ETH === "object";
+      const hasOldFormat = typeof v?.fixedSpreadBps === "number" || typeof v?.quoteLockSeconds === "number";
+      if (!hasNewFormat && hasOldFormat) {
+        await prisma.setting.update({ where: { key: "spreads" }, data: { valueJson: JSON.stringify(defaultSpreads) } });
+      }
+    } catch {
+    }
+  }
+
+  const spreadsJson = process.env.SPREADS_JSON;
+  if (spreadsJson && spreadsJson.trim().length > 0) {
+    try {
+      const v = JSON.parse(spreadsJson) as any;
+      const ok =
+        v &&
+        typeof v === "object" &&
+        typeof v.USDT?.midUsd === "number" &&
+        typeof v.BTC?.midUsd === "number" &&
+        typeof v.ETH?.midUsd === "number";
+      if (ok) {
+        await prisma.setting.update({ where: { key: "spreads" }, data: { valueJson: spreadsJson } });
+      }
+    } catch {
+    }
+  }
 
   await prisma.setting.upsert({
     where: { key: "giftCardRates" },
