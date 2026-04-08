@@ -56,10 +56,10 @@ export function WalletPage() {
       </div>
       <div className="row g-2 mt-3">
         <div className="col-6">
-          <button className="btn btn-outline-primary w-100">Receive (Preview)</button>
+          <button className="btn btn-outline-primary w-100">Receive</button>
         </div>
         <div className="col-6">
-          <button className="btn btn-primary w-100">Send (Preview)</button>
+          <button className="btn btn-primary w-100">Send</button>
         </div>
       </div>
     </div>

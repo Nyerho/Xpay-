@@ -84,7 +84,7 @@ export function HomePage() {
       <div className="card xpay-card shadow-sm">
         <div className="card-body">
           <div className="fw-bold mb-2">Status</div>
-          <div className="text-muted small">No demo activity. Check Activity tab after you transact.</div>
+          <div className="text-muted small">Check Activity for your latest transactions.</div>
         </div>
       </div>
     </div>

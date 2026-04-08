@@ -57,11 +57,26 @@ export function LoginPage() {
               run
                 .then(() => navigate('/'))
                 .catch((err: unknown) => {
-                  const msg =
-                    err && typeof err === 'object' && 'error' in err
-                      ? String((err as { error: string }).error)
-                      : 'auth_failed'
-                  setError(msg)
+                  const code = err && typeof err === 'object' && 'error' in err ? String((err as { error: string }).error) : null
+                  const status = err && typeof err === 'object' && 'status' in err ? Number((err as { status: number }).status) : null
+
+                  if (status === 401) {
+                    setError('Invalid email or password')
+                    return
+                  }
+                  if (code === 'network_error') {
+                    setError('Network error. Please try again.')
+                    return
+                  }
+                  if (code === 'request_failed') {
+                    setError('Server error. Please try again.')
+                    return
+                  }
+                  if (code) {
+                    setError(code)
+                    return
+                  }
+                  setError('Login failed. Please try again.')
                 })
                 .finally(() => setBusy(false))
             }}
@@ -104,7 +119,7 @@ export function LoginPage() {
           </form>
 
           <div className="text-muted small mt-3">
-            No demo balances/transactions are shown. Everything loads from your account.
+            Balances and activity load from your account.
           </div>
         </div>
       </div>

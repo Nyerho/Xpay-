@@ -1,6 +1,7 @@
 export type ApiError = {
   error: string
   message?: string
+  status?: number
 }
 
 function withBaseUrl(path: string) {
@@ -21,23 +22,37 @@ export async function apiFetch<T>(
     signal?: AbortSignal
   } = {},
 ): Promise<T> {
-  const res = await fetch(withBaseUrl(path), {
-    method: opts.method ?? (opts.body ? 'POST' : 'GET'),
-    headers: {
-      'content-type': 'application/json',
-      ...(opts.token ? { authorization: `Bearer ${opts.token}` } : {}),
-    },
-    body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
-    signal: opts.signal,
-  })
+  let res: Response
+  try {
+    res = await fetch(withBaseUrl(path), {
+      method: opts.method ?? (opts.body ? 'POST' : 'GET'),
+      headers: {
+        'content-type': 'application/json',
+        ...(opts.token ? { authorization: `Bearer ${opts.token}` } : {}),
+      },
+      body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+      signal: opts.signal,
+    })
+  } catch {
+    throw { error: 'network_error' } satisfies ApiError
+  }
 
   const text = await res.text()
-  const json = text ? (JSON.parse(text) as unknown) : null
+  let json: unknown = null
+  if (text) {
+    try {
+      json = JSON.parse(text) as unknown
+    } catch {
+      json = null
+    }
+  }
 
   if (!res.ok) {
-    const err = (json && typeof json === 'object' ? (json as ApiError) : null) ?? {
-      error: 'request_failed',
-    }
+    const err =
+      (json && typeof json === 'object' ? ({ ...(json as ApiError), status: res.status } as ApiError) : null) ?? ({
+        error: 'request_failed',
+        status: res.status,
+      } satisfies ApiError)
     throw err
   }
 
