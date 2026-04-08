@@ -19,6 +19,7 @@ export function createApp() {
   app.use("/api/consumer", consumerRouter);
 
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    process.stderr.write((err instanceof Error ? err.stack ?? err.message : String(err)) + "\n");
     res.status(500).json({ error: "internal_error" });
   });
 
