@@ -4,7 +4,7 @@ type CircleBlockchain = string;
 
 function getEnvRequired(key: string) {
   const v = process.env[key];
-  if (!v) throw new Error(`${key} is required`);
+  if (!v) throw new Error(`missing_env:${key}`);
   return v;
 }
 
@@ -63,7 +63,9 @@ export async function circleFetchPublicKeyPem(params: { keyId: string }) {
   const apiKey = getEnvRequired("CIRCLE_API_KEY");
   const url = `https://api.circle.com/v2/notifications/publicKey/${encodeURIComponent(params.keyId)}`;
   const res = await fetch(url, { headers: { authorization: `Bearer ${apiKey}` } });
-  if (!res.ok) throw new Error("circle_public_key_fetch_failed");
+  if (!res.ok) {
+    throw new Error(`circle_public_key_fetch_failed:${res.status}`);
+  }
   const json = (await res.json()) as any;
   const pem =
     (typeof json?.data?.publicKey === "string" ? json.data.publicKey : null) ??
@@ -89,4 +91,3 @@ export function getCircleBlockchains() {
   const cfg = getCircleConfig();
   return cfg?.blockchains ?? [];
 }
-
