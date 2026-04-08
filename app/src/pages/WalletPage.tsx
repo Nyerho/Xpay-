@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { apiFetch } from '../api'
 import { useAuth } from '../auth/useAuth'
 
@@ -56,7 +57,9 @@ export function WalletPage() {
       </div>
       <div className="row g-2 mt-3">
         <div className="col-6">
-          <button className="btn btn-outline-primary w-100">Receive</button>
+          <Link className="btn btn-outline-primary w-100" to="/deposit">
+            Receive
+          </Link>
         </div>
         <div className="col-6">
           <button className="btn btn-primary w-100">Send</button>

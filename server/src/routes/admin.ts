@@ -434,6 +434,104 @@ adminRouter.get("/transactions", requireMinRole("SUPPORT"), async (req, res) => 
   );
 });
 
+adminRouter.post("/transactions/:id/settle", requireMinRole("FINANCE"), async (req: AuthenticatedRequest, res) => {
+  const id = param(req.params.id);
+  const tx = await prisma.transaction.findUnique({ where: { id } });
+  if (!tx) {
+    res.status(404).json({ error: "not_found" });
+    return;
+  }
+  if (tx.type !== "DEPOSIT") {
+    res.status(400).json({ error: "not_deposit" });
+    return;
+  }
+  if (tx.status === "COMPLETE") {
+    res.status(409).json({ error: "already_complete" });
+    return;
+  }
+
+  let meta: any = {};
+  try {
+    meta = JSON.parse(tx.metadataJson || "{}");
+  } catch {
+    meta = {};
+  }
+
+  const assetRail = typeof tx.asset === "string" ? tx.asset : "";
+  const [asset, rail] = assetRail.split(":");
+
+  const user = await prisma.user.findUnique({ where: { id: tx.userId }, include: { balance: true } });
+  if (!user) {
+    res.status(404).json({ error: "user_not_found" });
+    return;
+  }
+  const balance = user.balance ?? (await prisma.balance.create({ data: { userId: user.id } }));
+
+  const amountStr = typeof meta.amount === "string" ? meta.amount : null;
+  if (!amountStr || !/^\d+(\.\d+)?$/.test(amountStr)) {
+    res.status(400).json({ error: "invalid_amount" });
+    return;
+  }
+
+  function parseToMinor(a: string, decimals: number) {
+    const [whole, frac = ""] = a.split(".");
+    const fracPadded = (frac + "0".repeat(decimals)).slice(0, decimals);
+    const digits = (whole.replace(/^0+/, "") || "0") + fracPadded;
+    return digits.replace(/^0+/, "") || "0";
+  }
+
+  const updateBalance: Record<string, any> = {};
+  if (asset === "USD" && rail === "BANK") {
+    const cents = Number(parseToMinor(amountStr, 2));
+    if (!Number.isFinite(cents) || cents <= 0) {
+      res.status(400).json({ error: "invalid_amount" });
+      return;
+    }
+    updateBalance.usdCents = balance.usdCents + cents;
+  } else if (asset === "USDT" && (rail === "TRC20" || rail === "ERC20")) {
+    const cents = Number(parseToMinor(amountStr, 2));
+    if (!Number.isFinite(cents) || cents <= 0) {
+      res.status(400).json({ error: "invalid_amount" });
+      return;
+    }
+    updateBalance.usdtCents = balance.usdtCents + cents;
+  } else if (asset === "BTC" && rail === "BTC") {
+    const sats = Number(parseToMinor(amountStr, 8));
+    if (!Number.isFinite(sats) || sats <= 0 || sats > 2_000_000_000) {
+      res.status(400).json({ error: "invalid_amount" });
+      return;
+    }
+    updateBalance.btcSats = balance.btcSats + sats;
+  } else if (asset === "ETH" && rail === "ETH") {
+    const wei = BigInt(parseToMinor(amountStr, 18));
+    if (wei <= 0n) {
+      res.status(400).json({ error: "invalid_amount" });
+      return;
+    }
+    const current = BigInt(balance.ethWei || "0");
+    updateBalance.ethWei = (current + wei).toString();
+  } else {
+    res.status(400).json({ error: "unsupported_asset" });
+    return;
+  }
+
+  await prisma.$transaction(async (p) => {
+    await p.balance.update({ where: { userId: balance.userId }, data: updateBalance });
+    await p.transaction.update({ where: { id: tx.id }, data: { status: "COMPLETE" } });
+  });
+
+  await writeAuditLog({
+    req,
+    actorId: req.auth!.userId,
+    action: "admin.deposit.settle",
+    entity: "Transaction",
+    entityId: tx.id,
+    after: { status: "COMPLETE", asset: tx.asset, amount: amountStr },
+  });
+
+  res.json({ ok: true });
+});
+
 function toCsvRow(values: Array<string | number | null | undefined>) {
   return (
     values

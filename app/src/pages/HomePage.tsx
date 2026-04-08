@@ -69,14 +69,7 @@ export function HomePage() {
         <ActionCard to="/swap" label="Swap" subtitle="Crypto ↔ Crypto" />
         <ActionCard to="/cards" label="Gift Cards" subtitle="Buy / sell cards" />
         <ActionCard to="/bills" label="Pay Bills" subtitle="US billers" />
-        <div className="col-6">
-          <div className="card xpay-card h-100">
-            <div className="card-body">
-              <div className="fw-semibold">Deposit</div>
-              <div className="text-muted small">Coming soon</div>
-            </div>
-          </div>
-        </div>
+        <ActionCard to="/deposit" label="Deposit" subtitle="Add funds" />
       </div>
 
       {error ? <div className="alert alert-danger py-2">{error}</div> : null}

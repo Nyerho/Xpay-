@@ -10,7 +10,7 @@ type Setting = {
   updatedById: string | null
 }
 
-const keys = ['spreads', 'giftCardRates'] as const
+const keys = ['spreads', 'giftCardRates', 'depositInstructions'] as const
 type Key = (typeof keys)[number]
 
 export function SettingsPage() {

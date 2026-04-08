@@ -63,3 +63,11 @@ export const consumerSwapRequestSchema = z.object({
   toAsset: z.enum(["BTC", "ETH", "USDT"]),
   amount: z.string().min(1).max(64),
 });
+
+export const consumerDepositRequestSchema = z.object({
+  asset: z.enum(["USD", "USDT", "BTC", "ETH"]),
+  rail: z.enum(["BANK", "BTC", "ETH", "TRC20", "ERC20"]),
+  amount: z.string().min(1).max(64),
+  txid: z.string().min(6).max(2000).optional(),
+  reference: z.string().min(2).max(128).optional(),
+});

@@ -11,6 +11,7 @@ import { ProfilePage } from './pages/ProfilePage'
 import { SellCryptoPage } from './pages/SellCryptoPage'
 import { SwapPage } from './pages/SwapPage'
 import { WalletPage } from './pages/WalletPage'
+import { DepositPage } from './pages/DepositPage'
 
 function TopBar() {
   return (
@@ -67,6 +68,7 @@ function AuthedRoutes() {
       <Route path="/swap" element={<SwapPage />} />
       <Route path="/cards" element={<CardsPage />} />
       <Route path="/bills" element={<BillsPage />} />
+      <Route path="/deposit" element={<DepositPage />} />
       <Route path="/wallet" element={<WalletPage />} />
       <Route path="/activity" element={<ActivityPage />} />
       <Route path="/profile" element={<ProfilePage />} />

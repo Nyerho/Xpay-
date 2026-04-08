@@ -42,5 +42,10 @@ export async function bootstrap() {
     },
     update: {},
   });
-}
 
+  await prisma.setting.upsert({
+    where: { key: "depositInstructions" },
+    create: { key: "depositInstructions", valueJson: JSON.stringify({}), updatedById: null },
+    update: {},
+  });
+}
