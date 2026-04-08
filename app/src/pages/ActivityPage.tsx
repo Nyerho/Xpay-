@@ -36,12 +36,12 @@ export function ActivityPage() {
   }, [token])
 
   return (
-    <div className="container">
+    <div className="container xpay-fade-in">
       <div className="h4 mb-3">Activity</div>
 
       {error ? <div className="alert alert-danger py-2">{error}</div> : null}
 
-      <div className="card shadow-sm">
+      <div className="card xpay-card shadow-sm">
         <div className="list-group list-group-flush">
           {loading ? <div className="list-group-item text-muted">Loading…</div> : null}
           {!loading && rows.length === 0 ? <div className="list-group-item text-muted">No activity yet</div> : null}
@@ -49,7 +49,10 @@ export function ActivityPage() {
             <div key={r.id} className="list-group-item d-flex justify-content-between align-items-center">
               <div>
                 <div className="fw-semibold">{r.type}</div>
-                <div className="text-muted small">{formatWhen(r.createdAt)}</div>
+                <div className="text-muted small">
+                  {r.asset ? `${r.asset} • ` : ''}
+                  {formatWhen(r.createdAt)}
+                </div>
               </div>
               <div className="text-end">
                 <div className="fw-bold">

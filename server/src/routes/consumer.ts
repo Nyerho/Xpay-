@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { prisma } from "../prisma";
 import { requireAuth, signAccessToken, verifyPassword, type AuthenticatedRequest, hashPassword } from "../auth";
-import { loginSchema, signupSchema } from "../validators";
+import { consumerSwapRequestSchema, loginSchema, signupSchema } from "../validators";
 import { writeAuditLog } from "../audit";
 
 export const consumerRouter = Router();
@@ -160,4 +160,53 @@ consumerRouter.get("/transactions", requireAuth, async (req: AuthenticatedReques
       createdAt: t.createdAt,
     })),
   );
+});
+
+consumerRouter.post("/swap", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const parsed = consumerSwapRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "invalid_body" });
+    return;
+  }
+
+  const user = await prisma.user.findUnique({ where: { id: req.auth!.userId } });
+  if (!user || user.role !== "CONSUMER") {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+  if (user.isFrozen) {
+    res.status(403).json({ error: "user_frozen" });
+    return;
+  }
+
+  const { fromAsset, toAsset, amount } = parsed.data;
+  if (fromAsset === toAsset) {
+    res.status(400).json({ error: "same_asset" });
+    return;
+  }
+  if (!/^\d+(\.\d+)?$/.test(amount)) {
+    res.status(400).json({ error: "invalid_amount" });
+    return;
+  }
+
+  const tx = await prisma.transaction.create({
+    data: {
+      userId: user.id,
+      type: "SWAP",
+      status: "PENDING",
+      asset: `${fromAsset}->${toAsset}`,
+      metadataJson: JSON.stringify({ fromAsset, toAsset, amount }),
+    },
+  });
+
+  await writeAuditLog({
+    req,
+    actorId: user.id,
+    action: "consumer.swap.request",
+    entity: "Transaction",
+    entityId: tx.id,
+    after: { fromAsset, toAsset, amount },
+  });
+
+  res.status(201).json({ id: tx.id, status: tx.status });
 });

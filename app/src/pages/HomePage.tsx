@@ -3,11 +3,16 @@ import { useEffect, useState } from 'react'
 import { apiFetch } from '../api'
 import { useAuth } from '../auth/useAuth'
 
-function ActionButton(props: { to: string; label: string; variant: string }) {
+function ActionCard(props: { to: string; label: string; subtitle: string }) {
   return (
     <div className="col-6">
-      <Link to={props.to} className={`btn ${props.variant} w-100 py-3 fw-semibold`}>
-        {props.label}
+      <Link to={props.to} className="text-decoration-none">
+        <div className="card xpay-card h-100">
+          <div className="card-body">
+            <div className="fw-semibold">{props.label}</div>
+            <div className="text-muted small">{props.subtitle}</div>
+          </div>
+        </div>
       </Link>
     </div>
   )
@@ -40,8 +45,8 @@ export function HomePage() {
   }, [token])
 
   return (
-    <div className="container">
-      <div className="card shadow-sm mb-3">
+    <div className="container xpay-fade-in">
+      <div className="card xpay-card shadow-sm mb-3">
         <div className="card-body">
           <div className="d-flex justify-content-between align-items-start">
             <div>
@@ -59,15 +64,24 @@ export function HomePage() {
       </div>
 
       <div className="row g-2 mb-3">
-        <ActionButton to="/buy" label="Buy" variant="btn-primary" />
-        <ActionButton to="/sell" label="Sell" variant="btn-outline-primary" />
-        <ActionButton to="/cards" label="Cards" variant="btn-outline-dark" />
-        <ActionButton to="/bills" label="Pay Bills" variant="btn-danger" />
+        <ActionCard to="/buy" label="Buy" subtitle="Crypto onramp" />
+        <ActionCard to="/sell" label="Sell" subtitle="Offramp to USD" />
+        <ActionCard to="/swap" label="Swap" subtitle="Crypto ↔ Crypto" />
+        <ActionCard to="/cards" label="Gift Cards" subtitle="Buy / sell cards" />
+        <ActionCard to="/bills" label="Pay Bills" subtitle="US billers" />
+        <div className="col-6">
+          <div className="card xpay-card h-100">
+            <div className="card-body">
+              <div className="fw-semibold">Deposit</div>
+              <div className="text-muted small">Coming soon</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {error ? <div className="alert alert-danger py-2">{error}</div> : null}
 
-      <div className="card shadow-sm">
+      <div className="card xpay-card shadow-sm">
         <div className="card-body">
           <div className="fw-bold mb-2">Status</div>
           <div className="text-muted small">No demo activity. Check Activity tab after you transact.</div>

@@ -1,111 +1,98 @@
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
-
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
-
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
+  --xpay-bg: #07060a;
+  --xpay-surface: #0f0d14;
+  --xpay-surface-2: #14101c;
+  --xpay-border: rgba(255, 255, 255, 0.08);
+  --xpay-text: rgba(255, 255, 255, 0.92);
+  --xpay-muted: rgba(255, 255, 255, 0.62);
+  --xpay-primary: #a855f7;
+  --xpay-primary-2: #7c3aed;
+  --xpay-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
-}
-
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
+[data-bs-theme='dark'] {
+  --bs-body-bg: var(--xpay-bg);
+  --bs-body-color: var(--xpay-text);
+  --bs-secondary-color: var(--xpay-muted);
+  --bs-tertiary-bg: var(--xpay-surface);
+  --bs-border-color: var(--xpay-border);
+  --bs-primary: var(--xpay-primary);
+  --bs-primary-rgb: 168, 85, 247;
+  --bs-link-color: var(--xpay-primary);
+  --bs-link-hover-color: var(--xpay-primary-2);
 }
 
 body {
   margin: 0;
+  background: var(--xpay-bg);
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
+#root {
+  min-height: 100vh;
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
+.xpay-bg {
+  background: radial-gradient(1200px 600px at 50% -20%, rgba(168, 85, 247, 0.24), rgba(7, 6, 10, 0)),
+    var(--xpay-bg);
+}
+
+.xpay-topbar {
+  background: linear-gradient(90deg, rgba(7, 6, 10, 0.95), rgba(20, 16, 28, 0.95));
+  border-bottom: 1px solid var(--xpay-border);
+  backdrop-filter: blur(10px);
+}
+
+.xpay-logo-x {
+  color: var(--xpay-primary);
+}
+
+.xpay-logo {
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.xpay-badge {
+  background: rgba(168, 85, 247, 0.18);
+  color: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(168, 85, 247, 0.35);
+}
+
+.xpay-bottom {
+  background: rgba(7, 6, 10, 0.92);
+  backdrop-filter: blur(10px);
+  border-color: var(--xpay-border);
+}
+
+.xpay-bottom .nav-link {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.xpay-bottom .nav-link.active {
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.xpay-card {
+  background: rgba(15, 13, 20, 0.92);
+  border: 1px solid var(--xpay-border);
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.xpay-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--xpay-shadow);
+  border-color: rgba(168, 85, 247, 0.25);
+}
+
+.xpay-fade-in {
+  animation: xpayFadeIn 220ms ease-out both;
+}
+
+@keyframes xpayFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
   }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
-}
-p {
-  margin: 0;
-}
-
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
-
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
 }

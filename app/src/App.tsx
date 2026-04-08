@@ -9,17 +9,18 @@ import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { SellCryptoPage } from './pages/SellCryptoPage'
+import { SwapPage } from './pages/SwapPage'
 import { WalletPage } from './pages/WalletPage'
 
 function TopBar() {
   return (
-    <nav className="navbar navbar-dark" style={{ backgroundColor: '#0A3161' }}>
+    <nav className="navbar navbar-dark xpay-topbar">
       <div className="container-fluid">
         <span className="navbar-brand fw-bold">
-          <span style={{ color: '#B31942' }}>x</span>
-          <span style={{ color: '#FFFFFF' }}>pay</span>
+          <span className="xpay-logo-x">x</span>
+          <span className="xpay-logo">pay</span>
         </span>
-        <span className="badge bg-light text-dark">US MVP Preview</span>
+        <span className="badge xpay-badge">Live</span>
       </div>
     </nav>
   )
@@ -27,18 +28,18 @@ function TopBar() {
 
 function BottomTabs() {
   return (
-    <nav className="navbar navbar-light bg-white border-top fixed-bottom">
+    <nav className="navbar navbar-dark xpay-bottom border-top fixed-bottom">
       <div className="container-fluid d-flex justify-content-around">
-        <NavLink className="nav-link small" to="/">
+        <NavLink className={({ isActive }) => `nav-link small ${isActive ? 'active' : ''}`} to="/">
           Home
         </NavLink>
-        <NavLink className="nav-link small" to="/wallet">
+        <NavLink className={({ isActive }) => `nav-link small ${isActive ? 'active' : ''}`} to="/wallet">
           Wallet
         </NavLink>
-        <NavLink className="nav-link small" to="/activity">
+        <NavLink className={({ isActive }) => `nav-link small ${isActive ? 'active' : ''}`} to="/activity">
           Activity
         </NavLink>
-        <NavLink className="nav-link small" to="/profile">
+        <NavLink className={({ isActive }) => `nav-link small ${isActive ? 'active' : ''}`} to="/profile">
           Profile
         </NavLink>
       </div>
@@ -63,6 +64,7 @@ function AuthedRoutes() {
       <Route path="/" element={<HomePage />} />
       <Route path="/buy" element={<BuyCryptoPage />} />
       <Route path="/sell" element={<SellCryptoPage />} />
+      <Route path="/swap" element={<SwapPage />} />
       <Route path="/cards" element={<CardsPage />} />
       <Route path="/bills" element={<BillsPage />} />
       <Route path="/wallet" element={<WalletPage />} />
@@ -77,7 +79,7 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <div className="min-vh-100 bg-light pb-5">
+        <div className="min-vh-100 xpay-bg pb-5" data-bs-theme="dark">
           <TopBar />
           <main className="container py-3">
             <Routes>

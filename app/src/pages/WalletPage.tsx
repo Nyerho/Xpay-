@@ -31,10 +31,10 @@ export function WalletPage() {
     : []
 
   return (
-    <div className="container">
+    <div className="container xpay-fade-in">
       <div className="h4 mb-3">Wallet</div>
       {error ? <div className="alert alert-danger py-2">{error}</div> : null}
-      <div className="card shadow-sm">
+      <div className="card xpay-card shadow-sm">
         <div className="list-group list-group-flush">
           {loading || !balance ? (
             <div className="list-group-item text-muted">Loading…</div>

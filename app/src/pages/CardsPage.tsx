@@ -48,7 +48,7 @@ export function CardsPage() {
   }, [brand, rates, value])
 
   return (
-    <div className="container">
+    <div className="container xpay-fade-in">
       <div className="h4 mb-3">Gift Cards</div>
 
       <ul className="nav nav-pills mb-3">
@@ -64,7 +64,7 @@ export function CardsPage() {
         </li>
       </ul>
 
-      <div className="card shadow-sm">
+      <div className="card xpay-card shadow-sm">
         <div className="card-body">
           {error ? <div className="alert alert-danger py-2">{error}</div> : null}
           <div className="row g-2">

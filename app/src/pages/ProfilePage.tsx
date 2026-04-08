@@ -3,9 +3,9 @@ import { useAuth } from '../auth/useAuth'
 export function ProfilePage() {
   const { me, logout } = useAuth()
   return (
-    <div className="container">
+    <div className="container xpay-fade-in">
       <div className="h4 mb-3">Profile</div>
-      <div className="card shadow-sm mb-3">
+      <div className="card xpay-card shadow-sm mb-3">
         <div className="card-body">
           <div className="d-flex justify-content-between">
             <div>
@@ -22,7 +22,7 @@ export function ProfilePage() {
         </div>
       </div>
 
-      <div className="card shadow-sm">
+      <div className="card xpay-card shadow-sm">
         <div className="list-group list-group-flush">
           <button className="list-group-item list-group-item-action" type="button">
             Devices

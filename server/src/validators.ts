@@ -57,3 +57,9 @@ export const createInventorySchema = z.object({
 export const updateInventorySchema = z.object({
   status: z.enum(["AVAILABLE", "SOLD", "VOID"]).optional(),
 });
+
+export const consumerSwapRequestSchema = z.object({
+  fromAsset: z.enum(["BTC", "ETH", "USDT"]),
+  toAsset: z.enum(["BTC", "ETH", "USDT"]),
+  amount: z.string().min(1).max(64),
+});

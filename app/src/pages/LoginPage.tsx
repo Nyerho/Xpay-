@@ -17,12 +17,12 @@ export function LoginPage() {
   }
 
   return (
-    <div className="container" style={{ maxWidth: 520 }}>
-      <div className="card shadow-sm">
+    <div className="container xpay-fade-in" style={{ maxWidth: 520 }}>
+      <div className="card xpay-card shadow-sm">
         <div className="card-body p-4">
           <div className="h4 mb-1 fw-bold">
-            <span style={{ color: '#B31942' }}>x</span>
-            <span style={{ color: '#0A3161' }}>pay</span>
+            <span className="xpay-logo-x">x</span>
+            <span className="xpay-logo">pay</span>
           </div>
           <div className="text-muted mb-3">Sign in to continue</div>
 
@@ -111,4 +111,3 @@ export function LoginPage() {
     </div>
   )
 }
-

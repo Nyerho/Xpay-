@@ -41,9 +41,9 @@ export function BillsPage() {
   }, [amountUsd, payFrom, spreadBps])
 
   return (
-    <div className="container">
+    <div className="container xpay-fade-in">
       <div className="h4 mb-3">Pay Bills</div>
-      <div className="card shadow-sm">
+      <div className="card xpay-card shadow-sm">
         <div className="card-body">
           <div className="mb-3">
             <label className="form-label">Biller</label>
