@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "prisma generate && tsc -p tsconfig.json",
-    "postinstall": "prisma generate",
+    "postinstall": "node scripts/postinstall.cjs",
     "start": "node dist/index.js",
     "render:build": "prisma db push && npm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
