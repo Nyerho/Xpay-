@@ -6,6 +6,7 @@ import {
   consumerCryptoBuySchema,
   consumerCryptoSellSchema,
   consumerConvertSchema,
+  consumerGiftCardSubmitSchema,
   consumerSwapRequestSchema,
   consumerUsdcWithdrawalSchema,
   consumerWithdrawalRequestSchema,
@@ -153,6 +154,15 @@ function getIdempotencyKey(req: AuthenticatedRequest) {
   if (!key || key.length > 128) return null;
   if (!/^[A-Za-z0-9._:-]+$/.test(key)) return null;
   return key;
+}
+
+function safeJsonParse(s: string) {
+  try {
+    const v = JSON.parse(s || "{}") as unknown;
+    return v && typeof v === "object" ? (v as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
 }
 
 consumerRouter.post("/auth/signup", async (req, res) => {
@@ -908,6 +918,112 @@ consumerRouter.post("/convert", requireAuth, async (req: AuthenticatedRequest, r
   });
 
   res.json({ ok: true });
+});
+
+consumerRouter.get("/gift-cards", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.auth!.userId } });
+  if (!user || user.role !== "CONSUMER") {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+  const items = await prisma.giftCardSubmission.findMany({
+    where: { userId: user.id },
+    orderBy: { createdAt: "desc" },
+    take: 200,
+  });
+  res.json(
+    items.map((s) => ({
+      id: s.id,
+      brand: s.brand,
+      valueUsdCents: s.valueUsdCents,
+      offerUsdtCents: s.offerUsdtCents,
+      status: s.status,
+      frontImageUrl: s.frontImageUrl,
+      backImageUrl: s.backImageUrl,
+      createdAt: s.createdAt,
+    })),
+  );
+});
+
+consumerRouter.post("/gift-cards", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const parsed = consumerGiftCardSubmitSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "invalid_body" });
+    return;
+  }
+
+  const user = await prisma.user.findUnique({ where: { id: req.auth!.userId } });
+  if (!user || user.role !== "CONSUMER") {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+  if (user.isFrozen) {
+    res.status(403).json({ error: "user_frozen" });
+    return;
+  }
+
+  const ratesSetting = await prisma.setting.findUnique({ where: { key: "giftCardRates" } });
+  if (!ratesSetting) {
+    res.status(503).json({ error: "rates_unavailable" });
+    return;
+  }
+  const rates = safeJsonParse(ratesSetting.valueJson);
+  const brandKey = parsed.data.brand.trim().toUpperCase().replaceAll(" ", "_");
+  const rateAny = rates[brandKey];
+  const buyPct =
+    rateAny && typeof rateAny === "object" && !Array.isArray(rateAny) && typeof (rateAny as Record<string, unknown>).buyPct === "number"
+      ? ((rateAny as Record<string, unknown>).buyPct as number)
+      : null;
+  if (!buyPct || !Number.isFinite(buyPct) || buyPct <= 0 || buyPct > 1.5) {
+    res.status(400).json({ error: "unsupported_brand" });
+    return;
+  }
+
+  const offerUsdtCents = Math.floor((parsed.data.valueUsdCents / 100) * buyPct * 100);
+  if (!Number.isFinite(offerUsdtCents) || offerUsdtCents <= 0) {
+    res.status(400).json({ error: "invalid_value" });
+    return;
+  }
+
+  const submission = await prisma.giftCardSubmission.create({
+    data: {
+      userId: user.id,
+      brand: brandKey,
+      valueUsdCents: parsed.data.valueUsdCents,
+      offerUsdtCents,
+      status: "REVIEWING",
+      frontImageUrl: parsed.data.frontImageUrl,
+      backImageUrl: parsed.data.backImageUrl ?? null,
+    },
+  });
+
+  await prisma.transaction.create({
+    data: {
+      userId: user.id,
+      type: "GIFT_CARD_SELL",
+      status: "PENDING",
+      asset: brandKey,
+      amountUsdCents: parsed.data.valueUsdCents,
+      externalRef: `giftcard:${submission.id}`,
+      metadataJson: JSON.stringify({
+        submissionId: submission.id,
+        offerUsdtCents,
+        frontImageUrl: parsed.data.frontImageUrl,
+        backImageUrl: parsed.data.backImageUrl ?? null,
+      }),
+    },
+  });
+
+  await writeAuditLog({
+    req,
+    actorId: user.id,
+    action: "consumer.giftCard.submit",
+    entity: "GiftCardSubmission",
+    entityId: submission.id,
+    after: { brand: brandKey, valueUsdCents: parsed.data.valueUsdCents, offerUsdtCents },
+  });
+
+  res.status(201).json({ id: submission.id, offerUsdtCents, status: submission.status });
 });
 
 consumerRouter.post("/swap", requireAuth, async (req: AuthenticatedRequest, res) => {

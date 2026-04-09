@@ -269,14 +269,51 @@ adminRouter.patch("/gift-cards/:id", async (req: AuthenticatedRequest, res) => {
     res.status(404).json({ error: "not_found" });
     return;
   }
-  const updated = await prisma.giftCardSubmission.update({
-    where: { id },
-    data: {
-      status: parsed.data.status,
-      reviewNotes: parsed.data.reviewNotes === undefined ? undefined : parsed.data.reviewNotes,
-      fraudFlagsJson: parsed.data.fraudFlagsJson ?? before.fraudFlagsJson,
-      reviewedById: req.auth!.userId,
-    },
+  if (before.status === "APPROVED" && parsed.data.status !== "APPROVED") {
+    res.status(409).json({ error: "already_approved" });
+    return;
+  }
+
+  const updated = await prisma.$transaction(async (p) => {
+    const next = await p.giftCardSubmission.update({
+      where: { id },
+      data: {
+        status: parsed.data.status,
+        reviewNotes: parsed.data.reviewNotes === undefined ? undefined : parsed.data.reviewNotes,
+        fraudFlagsJson: parsed.data.fraudFlagsJson ?? before.fraudFlagsJson,
+        reviewedById: req.auth!.userId,
+      },
+    });
+
+    if (before.status !== "APPROVED" && next.status === "APPROVED") {
+      await p.balance.upsert({
+        where: { userId: before.userId },
+        create: { userId: before.userId, usdtCents: before.offerUsdtCents },
+        update: { usdtCents: { increment: before.offerUsdtCents } },
+      });
+
+      const ref = `giftcard:${before.id}`;
+      const existingTx = await p.transaction.findUnique({ where: { externalRef: ref } });
+      if (existingTx) {
+        if (existingTx.status !== "COMPLETE") {
+          await p.transaction.update({ where: { id: existingTx.id }, data: { status: "COMPLETE" } });
+        }
+      } else {
+        await p.transaction.create({
+          data: {
+            userId: before.userId,
+            type: "GIFT_CARD_SELL",
+            status: "COMPLETE",
+            asset: before.brand,
+            amountUsdCents: before.valueUsdCents,
+            externalRef: ref,
+            metadataJson: JSON.stringify({ submissionId: before.id, offerUsdtCents: before.offerUsdtCents }),
+          },
+        });
+      }
+    }
+
+    return next;
   });
 
   await writeAuditLog({

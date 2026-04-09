@@ -104,3 +104,10 @@ export const consumerConvertSchema = z.object({
   quoteUpdatedAt: z.string().min(10).max(64).optional(),
   fxUpdatedAt: z.string().min(10).max(64).optional(),
 });
+
+export const consumerGiftCardSubmitSchema = z.object({
+  brand: z.string().min(2).max(64),
+  valueUsdCents: z.number().int().min(100),
+  frontImageUrl: z.string().min(10).max(2000),
+  backImageUrl: z.string().min(10).max(2000).optional(),
+});
