@@ -12,6 +12,13 @@ type DepositInstructions = {
     referenceFormat?: string
     supportEmail?: string
   }
+  ngnBank?: {
+    accountName?: string
+    bankName?: string
+    accountNumber?: string
+    referenceFormat?: string
+    supportEmail?: string
+  }
   crypto?: {
     BTC?: { address: string; note?: string }
     ETH?: { address: string; note?: string }
@@ -31,7 +38,7 @@ type Asset = 'USD' | 'USDT' | 'BTC' | 'ETH'
 export function DepositPage() {
   const { token } = useAuth()
   const navigate = useNavigate()
-  const [tab, setTab] = useState<'crypto' | 'bank'>('crypto')
+  const [tab, setTab] = useState<'crypto' | 'bank' | 'naira'>('crypto')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [cfg, setCfg] = useState<DepositInstructions | null>(null)
@@ -44,6 +51,9 @@ export function DepositPage() {
   const [txid, setTxid] = useState('')
   const [reference, setReference] = useState('')
   const [busy, setBusy] = useState(false)
+  const [ngnBusy, setNgnBusy] = useState(false)
+  const [ngnAmount, setNgnAmount] = useState('')
+  const [ngnRef, setNgnRef] = useState<string | null>(null)
 
   useEffect(() => {
     setLoading(true)
@@ -81,6 +91,7 @@ export function DepositPage() {
   }, [asset, cfg?.crypto, rail])
 
   const bank = cfg?.bank ?? null
+  const ngnBank = cfg?.ngnBank ?? null
 
   return (
     <div className="container xpay-fade-in" style={{ maxWidth: 760 }}>
@@ -102,6 +113,11 @@ export function DepositPage() {
         <li className="nav-item">
           <button className={`nav-link ${tab === 'bank' ? 'active' : ''}`} type="button" onClick={() => setTab('bank')}>
             Bank
+          </button>
+        </li>
+        <li className="nav-item">
+          <button className={`nav-link ${tab === 'naira' ? 'active' : ''}`} type="button" onClick={() => setTab('naira')}>
+            Naira
           </button>
         </li>
       </ul>
@@ -233,7 +249,7 @@ export function DepositPage() {
             )}
           </div>
         </div>
-      ) : (
+      ) : tab === 'bank' ? (
         <div className="card xpay-card shadow-sm">
           <div className="card-body">
             <div className="fw-semibold mb-2">Bank transfer details</div>
@@ -296,6 +312,92 @@ export function DepositPage() {
               }}
             >
               {busy ? 'Submitting…' : 'Submit transfer'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="card xpay-card shadow-sm">
+          <div className="card-body">
+            <div className="fw-semibold mb-2">NGN bank transfer</div>
+            <div className="row g-2">
+              <div className="col-12 col-md-6">
+                <div className="text-muted small">Bank</div>
+                <div className="fw-semibold">{ngnBank?.bankName ?? 'Not configured'}</div>
+              </div>
+              <div className="col-12 col-md-6">
+                <div className="text-muted small">Account name</div>
+                <div className="fw-semibold">{ngnBank?.accountName ?? '—'}</div>
+              </div>
+              <div className="col-12 col-md-6">
+                <div className="text-muted small">Account number</div>
+                <div className="fw-semibold">{ngnBank?.accountNumber ?? '—'}</div>
+              </div>
+              <div className="col-12 col-md-6">
+                <div className="text-muted small">Support</div>
+                <div className="fw-semibold">{ngnBank?.supportEmail ?? bank?.supportEmail ?? '—'}</div>
+              </div>
+            </div>
+
+            <hr className="border-secondary" />
+
+            <div className="fw-semibold mb-2">Create a deposit reference</div>
+            <div className="row g-2">
+              <div className="col-12 col-md-6">
+                <label className="form-label">Amount (NGN)</label>
+                <input className="form-control" value={ngnAmount} onChange={(e) => setNgnAmount(e.target.value)} inputMode="decimal" />
+              </div>
+              <div className="col-12 col-md-6">
+                <label className="form-label">Reference</label>
+                <div className="input-group">
+                  <input className="form-control font-monospace" readOnly value={ngnRef ?? ''} placeholder="Create a reference first" />
+                  <button
+                    className="btn btn-outline-light"
+                    type="button"
+                    disabled={!ngnRef}
+                    onClick={() => {
+                      if (!ngnRef) return
+                      void navigator.clipboard.writeText(ngnRef)
+                    }}
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <button
+              className="btn btn-primary w-100 mt-3"
+              disabled={!token || ngnBusy || !ngnAmount.trim()}
+              type="button"
+              onClick={() => {
+                if (!token) return
+                setNgnBusy(true)
+                setError(null)
+                setNgnRef(null)
+                apiFetch<{ id: string; status: string; reference: string }>('/api/consumer/deposits/ngn', {
+                  method: 'POST',
+                  token,
+                  body: { amount: ngnAmount.trim() },
+                })
+                  .then((r) => {
+                    setNgnRef(r.reference)
+                  })
+                  .catch((e: unknown) => {
+                    const msg = e && typeof e === 'object' && 'error' in e ? String((e as { error: string }).error) : 'deposit_failed'
+                    setError(msg)
+                  })
+                  .finally(() => setNgnBusy(false))
+              }}
+            >
+              {ngnBusy ? 'Creating…' : 'Create reference'}
+            </button>
+
+            <div className="text-muted small mt-2">
+              Make the bank transfer and include the reference exactly. Your deposit will be credited after review.
+            </div>
+
+            <button className="btn btn-outline-light w-100 mt-3" type="button" onClick={() => navigate('/activity')}>
+              View activity
             </button>
           </div>
         </div>

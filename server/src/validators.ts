@@ -72,12 +72,23 @@ export const consumerDepositRequestSchema = z.object({
   reference: z.string().min(2).max(128).optional(),
 });
 
+export const consumerNgnDepositSchema = z.object({
+  amount: z.string().min(1).max(64),
+});
+
 export const consumerWithdrawalRequestSchema = z.object({
   asset: z.enum(["USDT", "BTC", "ETH"]),
   rail: z.enum(["BTC", "ETH", "TRC20", "ERC20"]),
   amount: z.string().min(1).max(64),
   address: z.string().min(12).max(256),
   memo: z.string().min(1).max(128).optional(),
+});
+
+export const consumerNgnWithdrawalSchema = z.object({
+  amount: z.string().min(1).max(64),
+  bankName: z.string().min(2).max(64),
+  accountName: z.string().min(2).max(64),
+  accountNumber: z.string().min(6).max(20),
 });
 
 export const consumerCryptoBuySchema = z.object({

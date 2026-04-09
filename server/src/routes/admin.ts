@@ -554,6 +554,13 @@ adminRouter.post("/transactions/:id/settle", requireMinRole("FINANCE"), async (r
       return;
     }
     updateBalance.usdCents = balance.usdCents + cents;
+  } else if (tx.type === "DEPOSIT" && asset === "NGN" && rail === "BANK") {
+    const kobo = Number(parseToMinor(amountStr, 2));
+    if (!Number.isFinite(kobo) || kobo <= 0) {
+      res.status(400).json({ error: "invalid_amount" });
+      return;
+    }
+    updateBalance.ngnKobo = balance.ngnKobo + kobo;
   } else if (tx.type === "DEPOSIT" && asset === "USDT" && (rail === "TRC20" || rail === "ERC20")) {
     const cents = Number(parseToMinor(amountStr, 2));
     if (!Number.isFinite(cents) || cents <= 0) {
@@ -576,6 +583,24 @@ adminRouter.post("/transactions/:id/settle", requireMinRole("FINANCE"), async (r
     }
     const current = BigInt(balance.ethWei || "0");
     updateBalance.ethWei = (current + wei).toString();
+  } else if (tx.type === "WITHDRAWAL" && asset === "NGN" && rail === "BANK") {
+    const bankName = typeof meta.bankName === "string" ? meta.bankName.trim() : "";
+    const accountName = typeof meta.accountName === "string" ? meta.accountName.trim() : "";
+    const accountNumber = typeof meta.accountNumber === "string" ? meta.accountNumber.trim() : "";
+    if (!bankName || !accountName || !accountNumber) {
+      res.status(400).json({ error: "missing_bank_details" });
+      return;
+    }
+    const kobo = Number(parseToMinor(amountStr, 2));
+    if (!Number.isFinite(kobo) || kobo <= 0) {
+      res.status(400).json({ error: "invalid_amount" });
+      return;
+    }
+    if (balance.ngnKobo < kobo) {
+      res.status(409).json({ error: "insufficient_funds" });
+      return;
+    }
+    updateBalance.ngnKobo = balance.ngnKobo - kobo;
   } else if (tx.type === "WITHDRAWAL") {
     if (asset !== "USD") {
       res.status(400).json({ error: "unsupported_asset" });

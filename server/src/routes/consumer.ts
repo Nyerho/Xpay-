@@ -1,13 +1,16 @@
 import { Router } from "express";
+import crypto from "node:crypto";
 import { prisma } from "../prisma";
 import { requireAuth, signAccessToken, verifyPassword, type AuthenticatedRequest, hashPassword } from "../auth";
 import {
   consumerDepositRequestSchema,
+  consumerNgnDepositSchema,
   consumerCryptoBuySchema,
   consumerCryptoSellSchema,
   consumerConvertSchema,
   consumerGiftCardSubmitSchema,
   consumerGiftCardBuySchema,
+  consumerNgnWithdrawalSchema,
   consumerSwapRequestSchema,
   consumerUsdcWithdrawalSchema,
   consumerWithdrawalRequestSchema,
@@ -1314,6 +1317,53 @@ consumerRouter.post("/deposits", requireAuth, async (req: AuthenticatedRequest, 
   res.status(201).json({ id: tx.id, status: tx.status });
 });
 
+consumerRouter.post("/deposits/ngn", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const parsed = consumerNgnDepositSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "invalid_body" });
+    return;
+  }
+
+  const user = await prisma.user.findUnique({ where: { id: req.auth!.userId } });
+  if (!user || user.role !== "CONSUMER") {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+  if (user.isFrozen) {
+    res.status(403).json({ error: "user_frozen" });
+    return;
+  }
+
+  const amount = parsed.data.amount.trim();
+  if (!/^\d+(\.\d+)?$/.test(amount)) {
+    res.status(400).json({ error: "invalid_amount" });
+    return;
+  }
+
+  const reference = `XPAY-NGN-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
+  const tx = await prisma.transaction.create({
+    data: {
+      userId: user.id,
+      type: "DEPOSIT",
+      status: "PENDING",
+      asset: "NGN:BANK",
+      metadataJson: JSON.stringify({ asset: "NGN", rail: "BANK", amount, reference }),
+      externalRef: `ngn-deposit:${reference}`,
+    },
+  });
+
+  await writeAuditLog({
+    req,
+    actorId: user.id,
+    action: "consumer.deposit.ngn.request",
+    entity: "Transaction",
+    entityId: tx.id,
+    after: { amount, reference },
+  });
+
+  res.status(201).json({ id: tx.id, status: tx.status, reference });
+});
+
 consumerRouter.post("/withdrawals", requireAuth, async (req: AuthenticatedRequest, res) => {
   const parsed = consumerWithdrawalRequestSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -1366,6 +1416,80 @@ consumerRouter.post("/withdrawals", requireAuth, async (req: AuthenticatedReques
     entity: "Transaction",
     entityId: tx.id,
     after: { asset, rail, amount },
+  });
+
+  res.status(201).json({ id: tx.id, status: tx.status });
+});
+
+consumerRouter.post("/withdrawals/ngn", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const parsed = consumerNgnWithdrawalSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "invalid_body" });
+    return;
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: req.auth!.userId },
+    include: { balance: true },
+  });
+  if (!user || user.role !== "CONSUMER") {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+  if (user.isFrozen) {
+    res.status(403).json({ error: "user_frozen" });
+    return;
+  }
+  const kycOk = await requireKycApproved(user.id);
+  if (!kycOk) {
+    res.status(403).json({ error: "kyc_required" });
+    return;
+  }
+
+  const amount = parsed.data.amount.trim();
+  if (!/^\d+(\.\d+)?$/.test(amount)) {
+    res.status(400).json({ error: "invalid_amount" });
+    return;
+  }
+
+  const koboStr = parseDecimalToBigInt(amount, 2);
+  const kobo = koboStr ? Number(koboStr) : 0;
+  if (!Number.isFinite(kobo) || kobo <= 0) {
+    res.status(400).json({ error: "invalid_amount" });
+    return;
+  }
+
+  const b = user.balance ?? (await prisma.balance.create({ data: { userId: user.id } }));
+  if (b.ngnKobo < kobo) {
+    res.status(409).json({ error: "insufficient_funds" });
+    return;
+  }
+
+  const tx = await prisma.transaction.create({
+    data: {
+      userId: user.id,
+      type: "WITHDRAWAL",
+      status: "PENDING",
+      asset: "NGN:BANK",
+      amountUsdCents: null,
+      metadataJson: JSON.stringify({
+        asset: "NGN",
+        rail: "BANK",
+        amount,
+        bankName: parsed.data.bankName,
+        accountName: parsed.data.accountName,
+        accountNumber: parsed.data.accountNumber,
+      }),
+    },
+  });
+
+  await writeAuditLog({
+    req,
+    actorId: user.id,
+    action: "consumer.withdrawal.ngn.request",
+    entity: "Transaction",
+    entityId: tx.id,
+    after: { amount, bankName: parsed.data.bankName },
   });
 
   res.status(201).json({ id: tx.id, status: tx.status });
