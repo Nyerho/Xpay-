@@ -1,7 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../api'
 import { useAuth } from '../auth/useAuth'
+
+function formatEth(wei: string) {
+  try {
+    const w = BigInt(wei)
+    const scaled = w / 1000000000000n
+    return (Number(scaled) / 1e6).toFixed(6)
+  } catch {
+    return null
+  }
+}
 
 export function WalletPage() {
   const { token } = useAuth()
@@ -9,7 +19,7 @@ export function WalletPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
+  const load = useCallback(() => {
     if (!token) return
     setLoading(true)
     setError(null)
@@ -22,19 +32,28 @@ export function WalletPage() {
       .finally(() => setLoading(false))
   }, [token])
 
+  useEffect(() => {
+    load()
+  }, [load])
+
   const assets = balance
     ? [
-        { symbol: 'USD', name: 'USD Balance', amount: (balance.usdCents / 100).toFixed(2), sub: 'Spendable' },
-        { symbol: 'NGN', name: 'Naira', amount: (balance.ngnKobo / 100).toFixed(2), sub: 'Local' },
+        { symbol: 'USD', name: 'USD Balance', amount: `$${(balance.usdCents / 100).toFixed(2)}`, sub: 'Spendable' },
+        { symbol: 'NGN', name: 'Naira', amount: `₦${(balance.ngnKobo / 100).toFixed(2)}`, sub: 'Local' },
         { symbol: 'USDT', name: 'USDT', amount: (balance.usdtCents / 100).toFixed(2), sub: 'TRC20 / ERC20' },
-        { symbol: 'BTC', name: 'Bitcoin', amount: String(balance.btcSats), sub: 'sats' },
-        { symbol: 'ETH', name: 'Ethereum', amount: balance.ethWei, sub: 'wei' },
+        { symbol: 'BTC', name: 'Bitcoin', amount: (balance.btcSats / 100000000).toFixed(8), sub: 'BTC' },
+        { symbol: 'ETH', name: 'Ethereum', amount: formatEth(balance.ethWei) ?? '—', sub: 'ETH' },
       ]
     : []
 
   return (
     <div className="container xpay-fade-in">
-      <div className="h4 mb-3">Wallet</div>
+      <div className="d-flex align-items-center justify-content-between mb-3">
+        <div className="h4 mb-0">Wallet</div>
+        <button className="btn btn-sm btn-outline-light" type="button" onClick={load} disabled={!token || loading}>
+          Refresh
+        </button>
+      </div>
       {error ? <div className="alert alert-danger py-2">{error}</div> : null}
       <div className="card xpay-card shadow-sm">
         <div className="list-group list-group-flush">
