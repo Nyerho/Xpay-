@@ -95,6 +95,37 @@ async function getFx() {
   return { updatedAt: s.updatedAt, USDNGN: { mid, buyBps, sellBps } };
 }
 
+async function getTradeLimits() {
+  const s = await prisma.setting.findUnique({ where: { key: "tradeLimits" } });
+  if (!s) return null;
+  try {
+    const v = JSON.parse(s.valueJson || "{}") as any;
+    const maxPerTxUsdCents = typeof v?.maxPerTxUsdCents === "number" ? v.maxPerTxUsdCents : null;
+    const dailyUsdCents = typeof v?.dailyUsdCents === "number" ? v.dailyUsdCents : null;
+    if (!maxPerTxUsdCents || !dailyUsdCents) return null;
+    return { updatedAt: s.updatedAt, maxPerTxUsdCents, dailyUsdCents };
+  } catch {
+    return null;
+  }
+}
+
+async function enforceDailyUsdLimit(params: { userId: string; addUsdCents: number; dailyUsdCents: number }) {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const agg = await prisma.transaction.aggregate({
+    where: {
+      userId: params.userId,
+      createdAt: { gte: start },
+      type: { in: ["CRYPTO_BUY", "CRYPTO_SELL", "CONVERT"] as any },
+      status: "COMPLETE",
+      amountUsdCents: { not: null },
+    },
+    _sum: { amountUsdCents: true },
+  });
+  const used = agg._sum.amountUsdCents ?? 0;
+  return used + params.addUsdCents <= params.dailyUsdCents;
+}
+
 async function requireKycApproved(userId: string) {
   const required = process.env.TRADING_REQUIRE_KYC === "true";
   if (!required) return true;
@@ -113,6 +144,15 @@ function fxRateUsdToNgn(mid: number, sellBps: number) {
 
 function fxRateNgnToUsdDiv(mid: number, buyBps: number) {
   return Math.max(1, Math.floor((mid * (10000 + buyBps)) / 10000));
+}
+
+function getIdempotencyKey(req: AuthenticatedRequest) {
+  const raw = req.header("idempotency-key") ?? req.header("Idempotency-Key");
+  if (!raw) return null;
+  const key = raw.trim();
+  if (!key || key.length > 128) return null;
+  if (!/^[A-Za-z0-9._:-]+$/.test(key)) return null;
+  return key;
 }
 
 consumerRouter.post("/auth/signup", async (req, res) => {
@@ -345,6 +385,17 @@ consumerRouter.post("/trade/buy", requireAuth, async (req: AuthenticatedRequest,
     return;
   }
 
+  const idem = getIdempotencyKey(req);
+  if (idem) {
+    const existing = await prisma.transaction.findFirst({
+      where: { userId: req.auth!.userId, externalRef: `idem:buy:${idem}` },
+    });
+    if (existing) {
+      res.json({ ok: true, idempotent: true });
+      return;
+    }
+  }
+
   const user = await prisma.user.findUnique({
     where: { id: req.auth!.userId },
     include: { balance: true },
@@ -367,6 +418,23 @@ consumerRouter.post("/trade/buy", requireAuth, async (req: AuthenticatedRequest,
   if (!quotes) {
     res.status(503).json({ error: "quotes_unavailable" });
     return;
+  }
+  if (parsed.data.quoteUpdatedAt && new Date(parsed.data.quoteUpdatedAt).toISOString() !== quotes.updatedAt.toISOString()) {
+    res.status(409).json({ error: "quote_changed" });
+    return;
+  }
+
+  const limits = await getTradeLimits();
+  if (limits) {
+    if (parsed.data.usdCents > limits.maxPerTxUsdCents) {
+      res.status(400).json({ error: "limit_exceeded" });
+      return;
+    }
+    const ok = await enforceDailyUsdLimit({ userId: user.id, addUsdCents: parsed.data.usdCents, dailyUsdCents: limits.dailyUsdCents });
+    if (!ok) {
+      res.status(400).json({ error: "daily_limit_exceeded" });
+      return;
+    }
   }
 
   const { asset, usdCents } = parsed.data;
@@ -432,6 +500,7 @@ consumerRouter.post("/trade/buy", requireAuth, async (req: AuthenticatedRequest,
         asset,
         amountUsdCents: usdCents,
         amountAssetMinor: asset === "ETH" ? null : Number(assetMinor),
+        externalRef: idem ? `idem:buy:${idem}` : undefined,
         metadataJson: JSON.stringify({
           side: "buy",
           priceUsdCents: priceCents,
@@ -439,6 +508,7 @@ consumerRouter.post("/trade/buy", requireAuth, async (req: AuthenticatedRequest,
           assetMinor: assetMinor.toString(),
           assetAmount: formatMinorToDecimalString(assetMinor, decimals),
           quoteUpdatedAt: quotes.updatedAt,
+          limitsUpdatedAt: limits?.updatedAt ?? null,
         }),
       },
     });
@@ -462,6 +532,17 @@ consumerRouter.post("/trade/sell", requireAuth, async (req: AuthenticatedRequest
     return;
   }
 
+  const idem = getIdempotencyKey(req);
+  if (idem) {
+    const existing = await prisma.transaction.findFirst({
+      where: { userId: req.auth!.userId, externalRef: `idem:sell:${idem}` },
+    });
+    if (existing) {
+      res.json({ ok: true, idempotent: true });
+      return;
+    }
+  }
+
   const user = await prisma.user.findUnique({
     where: { id: req.auth!.userId },
     include: { balance: true },
@@ -483,6 +564,10 @@ consumerRouter.post("/trade/sell", requireAuth, async (req: AuthenticatedRequest
   const quotes = await getQuotes();
   if (!quotes) {
     res.status(503).json({ error: "quotes_unavailable" });
+    return;
+  }
+  if (parsed.data.quoteUpdatedAt && new Date(parsed.data.quoteUpdatedAt).toISOString() !== quotes.updatedAt.toISOString()) {
+    res.status(409).json({ error: "quote_changed" });
     return;
   }
 
@@ -544,6 +629,15 @@ consumerRouter.post("/trade/sell", requireAuth, async (req: AuthenticatedRequest
     return;
   }
 
+  const limits = await getTradeLimits();
+  if (limits) {
+    const ok = await enforceDailyUsdLimit({ userId: user.id, addUsdCents: usdCents, dailyUsdCents: limits.dailyUsdCents });
+    if (!ok) {
+      res.status(400).json({ error: "daily_limit_exceeded" });
+      return;
+    }
+  }
+
   await prisma.$transaction(async (p) => {
     if (asset === "USDT") {
       await p.balance.update({ where: { userId: b.userId }, data: { usdtCents: { decrement: Number(assetMinor) }, usdCents: { increment: usdCents } } });
@@ -562,6 +656,7 @@ consumerRouter.post("/trade/sell", requireAuth, async (req: AuthenticatedRequest
         asset,
         amountUsdCents: usdCents,
         amountAssetMinor: asset === "ETH" ? null : Number(assetMinor),
+        externalRef: idem ? `idem:sell:${idem}` : undefined,
         metadataJson: JSON.stringify({
           side: "sell",
           priceUsdCents: priceCents,
@@ -569,6 +664,7 @@ consumerRouter.post("/trade/sell", requireAuth, async (req: AuthenticatedRequest
           assetMinor: assetMinor.toString(),
           assetAmount: amount,
           quoteUpdatedAt: quotes.updatedAt,
+          limitsUpdatedAt: limits?.updatedAt ?? null,
         }),
       },
     });
@@ -590,6 +686,17 @@ consumerRouter.post("/convert", requireAuth, async (req: AuthenticatedRequest, r
   if (!parsed.success) {
     res.status(400).json({ error: "invalid_body" });
     return;
+  }
+
+  const idem = getIdempotencyKey(req);
+  if (idem) {
+    const existing = await prisma.transaction.findFirst({
+      where: { userId: req.auth!.userId, externalRef: `idem:convert:${idem}` },
+    });
+    if (existing) {
+      res.json({ ok: true, idempotent: true });
+      return;
+    }
   }
 
   const user = await prisma.user.findUnique({
@@ -630,6 +737,14 @@ consumerRouter.post("/convert", requireAuth, async (req: AuthenticatedRequest, r
   const fx = (from === "NGN" || to === "NGN") ? await getFx() : null;
   if ((from === "NGN" || to === "NGN") && !fx) {
     res.status(503).json({ error: "fx_unavailable" });
+    return;
+  }
+  if (involvesCrypto && parsed.data.quoteUpdatedAt && new Date(parsed.data.quoteUpdatedAt).toISOString() !== quotes!.updatedAt.toISOString()) {
+    res.status(409).json({ error: "quote_changed" });
+    return;
+  }
+  if ((from === "NGN" || to === "NGN") && parsed.data.fxUpdatedAt && new Date(parsed.data.fxUpdatedAt).toISOString() !== fx!.updatedAt.toISOString()) {
+    res.status(409).json({ error: "fx_changed" });
     return;
   }
 
@@ -695,6 +810,23 @@ consumerRouter.post("/convert", requireAuth, async (req: AuthenticatedRequest, r
     res.status(400).json({ error: "amount_too_small" });
     return;
   }
+  const limits = await getTradeLimits();
+  if (limits) {
+    const addUsd = Number(usdCentsValue);
+    if (!Number.isFinite(addUsd) || addUsd <= 0) {
+      res.status(400).json({ error: "amount_too_small" });
+      return;
+    }
+    if (addUsd > limits.maxPerTxUsdCents) {
+      res.status(400).json({ error: "limit_exceeded" });
+      return;
+    }
+    const ok = await enforceDailyUsdLimit({ userId: user.id, addUsdCents: addUsd, dailyUsdCents: limits.dailyUsdCents });
+    if (!ok) {
+      res.status(400).json({ error: "daily_limit_exceeded" });
+      return;
+    }
+  }
   const toMinor = assetFromUsdCents(to, usdCentsValue);
   if (!toMinor || toMinor <= 0n) {
     res.status(400).json({ error: "amount_too_small" });
@@ -750,6 +882,7 @@ consumerRouter.post("/convert", requireAuth, async (req: AuthenticatedRequest, r
         status: "COMPLETE",
         asset: `${from}->${to}`,
         amountUsdCents: Number(usdCentsValue),
+        externalRef: idem ? `idem:convert:${idem}` : undefined,
         metadataJson: JSON.stringify({
           from,
           to,
@@ -760,6 +893,7 @@ consumerRouter.post("/convert", requireAuth, async (req: AuthenticatedRequest, r
           usdCentsValue: usdCentsValue.toString(),
           quotesUpdatedAt: quotes?.updatedAt ?? null,
           fxUpdatedAt: fx?.updatedAt ?? null,
+          limitsUpdatedAt: limits?.updatedAt ?? null,
         }),
       },
     });

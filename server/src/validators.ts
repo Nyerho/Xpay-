@@ -83,11 +83,13 @@ export const consumerWithdrawalRequestSchema = z.object({
 export const consumerCryptoBuySchema = z.object({
   asset: z.enum(["USDT", "BTC", "ETH"]),
   usdCents: z.number().int().min(100),
+  quoteUpdatedAt: z.string().min(10).max(64).optional(),
 });
 
 export const consumerCryptoSellSchema = z.object({
   asset: z.enum(["USDT", "BTC", "ETH"]),
   amount: z.string().min(1).max(64),
+  quoteUpdatedAt: z.string().min(10).max(64).optional(),
 });
 
 export const consumerUsdcWithdrawalSchema = z.object({
@@ -99,4 +101,6 @@ export const consumerConvertSchema = z.object({
   from: z.enum(["USD", "NGN", "USDT", "BTC", "ETH"]),
   to: z.enum(["USD", "NGN", "USDT", "BTC", "ETH"]),
   amount: z.string().min(1).max(64),
+  quoteUpdatedAt: z.string().min(10).max(64).optional(),
+  fxUpdatedAt: z.string().min(10).max(64).optional(),
 });

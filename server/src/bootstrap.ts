@@ -89,6 +89,16 @@ export async function bootstrap() {
   }
 
   await prisma.setting.upsert({
+    where: { key: "tradeLimits" },
+    create: {
+      key: "tradeLimits",
+      valueJson: JSON.stringify({ maxPerTxUsdCents: 200_000, dailyUsdCents: 1_000_000 }),
+      updatedById: null,
+    },
+    update: {},
+  });
+
+  await prisma.setting.upsert({
     where: { key: "giftCardRates" },
     create: {
       key: "giftCardRates",
