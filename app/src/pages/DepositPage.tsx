@@ -56,6 +56,7 @@ export function DepositPage() {
   const [ngnAmount, setNgnAmount] = useState('')
   const [ngnRef, setNgnRef] = useState<string | null>(null)
   const [ngnAuthUrl, setNgnAuthUrl] = useState<string | null>(null)
+  const [ngnFee, setNgnFee] = useState<number | null>(null)
 
   useEffect(() => {
     setLoading(true)
@@ -383,7 +384,7 @@ export function DepositPage() {
                 setError(null)
                 setNgnRef(null)
                 setNgnAuthUrl(null)
-                apiFetch<{ authorizationUrl: string; reference: string }>('/api/consumer/deposits/ngn/paystack/initialize', {
+                apiFetch<{ authorizationUrl: string; reference: string; feeKoboEstimate: number | null }>('/api/consumer/deposits/ngn/paystack/initialize', {
                   method: 'POST',
                   token,
                   body: { amount: ngnAmount.trim() },
@@ -391,6 +392,7 @@ export function DepositPage() {
                   .then((r) => {
                     setNgnRef(r.reference)
                     setNgnAuthUrl(r.authorizationUrl)
+                    setNgnFee(r.feeKoboEstimate ?? null)
                     window.location.href = r.authorizationUrl
                   })
                   .catch((e: unknown) => {
@@ -406,6 +408,8 @@ export function DepositPage() {
             <div className="text-muted small mt-2">
               After payment, your NGN wallet will be credited automatically once confirmed.
             </div>
+
+            {ngnFee !== null ? <div className="text-muted small mt-1">Estimated Paystack fee: ₦{(ngnFee / 100).toFixed(2)}</div> : null}
 
             {ngnAuthUrl ? (
               <button className="btn btn-outline-light w-100 mt-2" type="button" onClick={() => window.location.assign(ngnAuthUrl)}>

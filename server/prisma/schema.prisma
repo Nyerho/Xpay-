@@ -73,6 +73,7 @@ model User {
   giftCardsReviewed    GiftCardSubmission[] @relation("GiftCardReviewedBy")
   kycReviewed          KycCase[]           @relation("KycReviewedBy")
   externalWallets      ExternalWallet[]
+  notifications        Notification[]
 }
 
 model Balance {
@@ -186,6 +187,22 @@ model ExternalWebhookEvent {
   createdAt DateTime @default(now())
 
   @@unique([provider, eventId])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type      String
+  title     String
+  body      String
+  link      String?
+  isRead    Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
 
 model AuditLog {

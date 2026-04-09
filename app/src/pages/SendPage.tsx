@@ -20,6 +20,7 @@ export function SendPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [resolving, setResolving] = useState(false)
+  const [feeEstimate, setFeeEstimate] = useState<number | null>(null)
 
   const usdCents = useMemo(() => {
     const m = amountUsd.trim().match(/^(\d+)(?:\.(\d{0,2}))?$/)
@@ -49,6 +50,28 @@ export function SendPage() {
       })
       .catch(() => setBanks([]))
   }, [bankCode, method, token])
+
+  useEffect(() => {
+    if (!ngnAmount) {
+      setFeeEstimate(null)
+      return
+    }
+    const m = ngnAmount.match(/^(\d+)(?:\.(\d{0,2}))?$/)
+    if (!m) {
+      setFeeEstimate(null)
+      return
+    }
+    const whole = Number(m[1] ?? '0')
+    const frac = String(m[2] ?? '').padEnd(2, '0')
+    const kobo = whole * 100 + Number(frac || '0')
+    if (!Number.isFinite(kobo) || kobo <= 0) {
+      setFeeEstimate(null)
+      return
+    }
+    if (kobo <= 5000 * 100) setFeeEstimate(10 * 100)
+    else if (kobo <= 50000 * 100) setFeeEstimate(25 * 100)
+    else setFeeEstimate(50 * 100)
+  }, [ngnAmount])
 
   return (
     <div className="container xpay-fade-in" style={{ maxWidth: 760 }}>
@@ -173,6 +196,12 @@ export function SendPage() {
               </div>
 
               <div className="text-muted small mt-2">Submitting sends your payout request automatically.</div>
+              {feeEstimate !== null && ngnAmount ? (
+                <div className="text-muted small mt-1">
+                  Estimated transfer fee: ₦{(feeEstimate / 100).toFixed(2)} • Total debit:{' '}
+                  ₦{((Number(ngnAmount) + feeEstimate / 100) as number).toFixed(2)}
+                </div>
+              ) : null}
 
               <button
                 className="btn btn-primary w-100 mt-3"

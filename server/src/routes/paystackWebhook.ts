@@ -2,6 +2,7 @@ import type { RequestHandler } from "express";
 import { prisma } from "../prisma";
 import { paystackVerifyWebhookSignature } from "../paystack";
 import { sendEmail } from "../notify";
+import { createNotification } from "../notifications";
 
 function toDbErrorCode(err: unknown) {
   if (!err || typeof err !== "object") return null;
@@ -94,6 +95,13 @@ export const paystackWebhookHandler: RequestHandler = async (req, res) => {
               },
             });
           });
+          await createNotification({
+            userId: t.userId,
+            type: "ngn.deposit.completed",
+            title: "NGN deposit received",
+            body: `₦${(amountKobo / 100).toFixed(2)} credited to your wallet.`,
+            link: "/wallet",
+          });
         }
       }
     }
@@ -116,6 +124,13 @@ export const paystackWebhookHandler: RequestHandler = async (req, res) => {
               where: { id: t.id },
               data: { status: "COMPLETE", metadataJson: JSON.stringify({ ...meta, paystack: { eventId, reference, transferCode, status, amountKobo } }) },
             });
+            await createNotification({
+              userId: t.userId,
+              type: "ngn.withdrawal.completed",
+              title: "NGN withdrawal successful",
+              body: `₦${(Number(kobo ?? 0) / 100).toFixed(2)} sent to your bank account.`,
+              link: "/activity",
+            });
             const user = await prisma.user.findUnique({ where: { id: t.userId } });
             if (user?.email) {
               await sendEmail({
@@ -133,6 +148,13 @@ export const paystackWebhookHandler: RequestHandler = async (req, res) => {
               if (debited && typeof kobo === "number" && kobo > 0) {
                 await p.balance.update({ where: { userId: t.userId }, data: { ngnKobo: { increment: kobo } } });
               }
+            });
+            await createNotification({
+              userId: t.userId,
+              type: "ngn.withdrawal.failed",
+              title: "NGN withdrawal failed",
+              body: `Your payout failed. Funds have been returned to your NGN wallet.`,
+              link: "/activity",
             });
             const user = await prisma.user.findUnique({ where: { id: t.userId } });
             if (user?.email) {

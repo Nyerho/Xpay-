@@ -14,6 +14,7 @@ import { WalletPage } from './pages/WalletPage'
 import { DepositPage } from './pages/DepositPage'
 import { SendPage } from './pages/SendPage'
 import { ConvertPage } from './pages/ConvertPage'
+import { NotificationsPage } from './pages/NotificationsPage'
 
 function TopBar() {
   return (
@@ -41,6 +42,9 @@ function BottomTabs() {
         </NavLink>
         <NavLink className={({ isActive }) => `nav-link small ${isActive ? 'active' : ''}`} to="/activity">
           Activity
+        </NavLink>
+        <NavLink className={({ isActive }) => `nav-link small ${isActive ? 'active' : ''}`} to="/notifications">
+          Alerts
         </NavLink>
         <NavLink className={({ isActive }) => `nav-link small ${isActive ? 'active' : ''}`} to="/profile">
           Profile
@@ -75,6 +79,7 @@ function AuthedRoutes() {
       <Route path="/convert" element={<ConvertPage />} />
       <Route path="/wallet" element={<WalletPage />} />
       <Route path="/activity" element={<ActivityPage />} />
+      <Route path="/notifications" element={<NotificationsPage />} />
       <Route path="/profile" element={<ProfilePage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

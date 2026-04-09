@@ -29,6 +29,8 @@ import {
   paystackListBanks,
   paystackResolveAccount,
 } from "../paystack";
+import { paystackEstimateDepositFeeKobo, paystackEstimateTransferFeeKobo } from "../fees";
+import { createNotification } from "../notifications";
 
 export const consumerRouter = Router();
 
@@ -444,6 +446,56 @@ consumerRouter.get("/transactions/:id", requireAuth, async (req: AuthenticatedRe
       createdAt: t.createdAt,
       updatedAt: t.updatedAt,
     });
+  } catch (err) {
+    process.stderr.write((err instanceof Error ? err.stack ?? err.message : String(err)) + "\n");
+    res.status(503).json({ error: "db_unavailable", code: toDbErrorCode(err) });
+  }
+});
+
+consumerRouter.get("/notifications", requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.auth!.userId } });
+    if (!user || user.role !== "CONSUMER") {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
+    const items = await prisma.notification.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+    res.json(
+      items.map((n) => ({
+        id: n.id,
+        type: n.type,
+        title: n.title,
+        body: n.body,
+        link: n.link,
+        isRead: n.isRead,
+        createdAt: n.createdAt,
+      })),
+    );
+  } catch (err) {
+    process.stderr.write((err instanceof Error ? err.stack ?? err.message : String(err)) + "\n");
+    res.status(503).json({ error: "db_unavailable", code: toDbErrorCode(err) });
+  }
+});
+
+consumerRouter.post("/notifications/:id/read", requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.auth!.userId } });
+    if (!user || user.role !== "CONSUMER") {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
+    const id = param(req.params.id);
+    const before = await prisma.notification.findUnique({ where: { id } });
+    if (!before || before.userId !== user.id) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    await prisma.notification.update({ where: { id }, data: { isRead: true } });
+    res.json({ ok: true });
   } catch (err) {
     process.stderr.write((err instanceof Error ? err.stack ?? err.message : String(err)) + "\n");
     res.status(503).json({ error: "db_unavailable", code: toDbErrorCode(err) });
@@ -1456,6 +1508,7 @@ consumerRouter.post("/deposits/ngn/paystack/initialize", requireAuth, async (req
 
   const reference = `XPAY-PS-${crypto.randomBytes(6).toString("hex").toUpperCase()}`;
   const callbackUrl = process.env.PAYSTACK_CALLBACK_URL ?? null;
+  const feeKobo = paystackEstimateDepositFeeKobo(kobo);
 
   let init: { authorizationUrl: string; reference: string };
   try {
@@ -1483,7 +1536,15 @@ consumerRouter.post("/deposits/ngn/paystack/initialize", requireAuth, async (req
       status: "PENDING",
       asset: "NGN:PAYSTACK",
       externalRef: `paystack:${init.reference}`,
-      metadataJson: JSON.stringify({ provider: "paystack", asset: "NGN", rail: "PAYSTACK", amount, amountKobo: kobo, reference: init.reference }),
+      metadataJson: JSON.stringify({
+        provider: "paystack",
+        asset: "NGN",
+        rail: "PAYSTACK",
+        amount,
+        amountKobo: kobo,
+        reference: init.reference,
+        feeKoboEstimate: feeKobo,
+      }),
     },
   });
 
@@ -1496,7 +1557,15 @@ consumerRouter.post("/deposits/ngn/paystack/initialize", requireAuth, async (req
     after: { amount, reference: init.reference },
   });
 
-  res.json({ authorizationUrl: init.authorizationUrl, reference: init.reference });
+  await createNotification({
+    userId: user.id,
+    type: "ngn.deposit.initiated",
+    title: "NGN deposit initiated",
+    body: `Reference ${init.reference}. Complete payment to credit your wallet.`,
+    link: "/activity",
+  });
+
+  res.json({ authorizationUrl: init.authorizationUrl, reference: init.reference, amountKobo: kobo, feeKoboEstimate: feeKobo });
 });
 
 consumerRouter.get("/paystack/banks", requireAuth, async (req: AuthenticatedRequest, res) => {
@@ -1682,6 +1751,13 @@ consumerRouter.post("/withdrawals/ngn", requireAuth, async (req: AuthenticatedRe
     return;
   }
 
+  const transferFeeKoboEstimate = paystackEstimateTransferFeeKobo(kobo);
+  const totalDebit = kobo + (transferFeeKoboEstimate ?? 0);
+  if (b.ngnKobo < totalDebit) {
+    res.status(409).json({ error: "insufficient_funds" });
+    return;
+  }
+
   let accountName = parsed.data.accountName?.trim() || "";
   try {
     const resolved = await paystackResolveAccount({ bankCode, accountNumber: parsed.data.accountNumber });
@@ -1713,7 +1789,7 @@ consumerRouter.post("/withdrawals/ngn", requireAuth, async (req: AuthenticatedRe
   let createdTxId: string;
   try {
     const created = await prisma.$transaction(async (p) => {
-      await p.balance.update({ where: { userId: b.userId }, data: { ngnKobo: { decrement: kobo } } });
+      await p.balance.update({ where: { userId: b.userId }, data: { ngnKobo: { decrement: totalDebit } } });
       const tx = await p.transaction.create({
         data: {
           userId: user.id,
@@ -1735,6 +1811,8 @@ consumerRouter.post("/withdrawals/ngn", requireAuth, async (req: AuthenticatedRe
             accountNumber: parsed.data.accountNumber,
             accountName,
             recipientCode: recipient.recipientCode,
+            transferFeeKoboEstimate,
+            totalDebitKobo: totalDebit,
           }),
         },
       });
@@ -1756,12 +1834,17 @@ consumerRouter.post("/withdrawals/ngn", requireAuth, async (req: AuthenticatedRe
     });
     await prisma.transaction.update({
       where: { id: createdTxId },
-      data: { metadataJson: JSON.stringify({ ...(safeJsonParse((await prisma.transaction.findUnique({ where: { id: createdTxId } }))?.metadataJson || "{}") as any), transfer }) },
+      data: {
+        metadataJson: JSON.stringify({
+          ...(safeJsonParse((await prisma.transaction.findUnique({ where: { id: createdTxId } }))?.metadataJson || "{}") as any),
+          transfer,
+        }),
+      },
     });
   } catch (err) {
     await prisma.$transaction(async (p) => {
       await p.transaction.update({ where: { id: createdTxId }, data: { status: "FAILED" } });
-      await p.balance.update({ where: { userId: b.userId }, data: { ngnKobo: { increment: kobo } } });
+      await p.balance.update({ where: { userId: b.userId }, data: { ngnKobo: { increment: totalDebit } } });
     });
     const msg = err instanceof Error ? err.message : String(err);
     if (msg === "paystack_not_configured") {
