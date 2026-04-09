@@ -8,6 +8,7 @@ type Row = {
   status: string
   asset: string | null
   amountUsdCents: number | null
+  displayAmount?: string | null
   createdAt: string
 }
 
@@ -97,6 +98,7 @@ export function ActivityPage() {
               ? `Convert ${detail.asset ?? ''}`.trim()
               : detail.type,
       usdAmount: formatUsd(detail.amountUsdCents),
+      ngnAmount: detail.displayAmount ?? null,
     }
   }, [detail])
 
@@ -143,8 +145,8 @@ export function ActivityPage() {
                     </div>
                   </div>
                   <div className="col-12 col-md-6">
-                    <div className="text-muted small">USD value</div>
-                    <div className="fw-semibold">{receipt.usdAmount || '—'}</div>
+                    <div className="text-muted small">Amount</div>
+                    <div className="fw-semibold">{receipt.usdAmount || receipt.ngnAmount || '—'}</div>
                   </div>
                 </div>
 
@@ -234,7 +236,7 @@ export function ActivityPage() {
               <div className="text-end">
                 <div className="fw-bold">
                   {r.amountUsdCents === null
-                    ? ''
+                    ? r.displayAmount ?? ''
                     : r.type === 'CRYPTO_BUY'
                       ? `-${formatUsd(r.amountUsdCents)}`
                       : formatUsd(r.amountUsdCents)}

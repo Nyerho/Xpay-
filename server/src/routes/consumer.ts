@@ -187,6 +187,14 @@ function toDbErrorCode(err: unknown) {
   return code ?? errorCode;
 }
 
+function formatNgnAmountFromMeta(meta: Record<string, unknown>) {
+  const amount = typeof meta.amount === "string" ? meta.amount.trim() : "";
+  if (!amount || !/^\d+(\.\d+)?$/.test(amount)) return null;
+  const n = Number(amount);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return `₦${n.toFixed(2)}`;
+}
+
 consumerRouter.post("/auth/signup", async (req, res) => {
   const parsed = signupSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -394,6 +402,12 @@ consumerRouter.get("/transactions", requireAuth, async (req: AuthenticatedReques
         status: t.status,
         asset: t.asset,
         amountUsdCents: t.amountUsdCents,
+        displayAmount:
+          t.amountUsdCents !== null
+            ? null
+            : t.asset?.startsWith("NGN:")
+              ? formatNgnAmountFromMeta(safeJsonParse(t.metadataJson))
+              : null,
         createdAt: t.createdAt,
       })),
     );
@@ -425,6 +439,8 @@ consumerRouter.get("/transactions/:id", requireAuth, async (req: AuthenticatedRe
       amountAssetMinor: t.amountAssetMinor,
       metadataJson: t.metadataJson,
       externalRef: t.externalRef,
+      displayAmount:
+        t.amountUsdCents !== null ? null : t.asset?.startsWith("NGN:") ? formatNgnAmountFromMeta(safeJsonParse(t.metadataJson)) : null,
       createdAt: t.createdAt,
       updatedAt: t.updatedAt,
     });
