@@ -272,12 +272,14 @@ export function CardsPage() {
                   setError(null)
                   setLastCode(null)
                   try {
-                    const r = await apiFetch<{ ok: true; code: string }>('/api/consumer/gift-cards/buy', {
+                    const r = await apiFetch<{ ok: true; itemId: string }>('/api/consumer/gift-cards/buy', {
                       method: 'POST',
                       token,
                       body: { brand, valueUsdCents },
                     })
-                    setLastCode(r.code)
+                    const reveal = await apiFetch<{ code: string }>(`/api/consumer/gift-cards/purchases/${r.itemId}/code`, { token })
+                    setLastCode(reveal.code)
+                    setRevealed((prev) => ({ ...prev, [r.itemId]: reveal.code }))
                     const nextInv = await apiFetch<InventoryRow[]>(`/api/consumer/gift-cards/inventory?brand=${encodeURIComponent(brand.toUpperCase().replaceAll(' ', '_'))}`, {
                       token,
                     })

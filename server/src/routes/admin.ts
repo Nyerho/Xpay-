@@ -15,6 +15,7 @@ import {
 import { hashPassword } from "../auth";
 import { writeAuditLog } from "../audit";
 import { circleCreateOutboundUsdcTransfer, getCircleBlockchains, isCircleEnabled } from "../circle";
+import { sendEmail } from "../notify";
 
 export const adminRouter = Router();
 
@@ -271,6 +272,7 @@ adminRouter.patch("/gift-cards/:id", async (req: AuthenticatedRequest, res) => {
     res.status(404).json({ error: "not_found" });
     return;
   }
+  const submitter = await prisma.user.findUnique({ where: { id: before.userId } });
   if (before.status === "APPROVED" && parsed.data.status !== "APPROVED") {
     res.status(409).json({ error: "already_approved" });
     return;
@@ -327,6 +329,22 @@ adminRouter.patch("/gift-cards/:id", async (req: AuthenticatedRequest, res) => {
     before: { status: before.status, reviewNotes: before.reviewNotes },
     after: { status: updated.status, reviewNotes: updated.reviewNotes },
   });
+
+  if (submitter?.email && before.status !== updated.status) {
+    if (updated.status === "APPROVED") {
+      await sendEmail({
+        to: submitter.email,
+        subject: "Gift card approved",
+        text: `Your gift card submission was approved.\n\nBrand: ${before.brand}\nValue: $${(before.valueUsdCents / 100).toFixed(2)}\nCredited: ${(before.offerUsdtCents / 100).toFixed(2)} USDT\n\nSubmission ID: ${before.id}\n`,
+      });
+    } else if (updated.status === "REJECTED") {
+      await sendEmail({
+        to: submitter.email,
+        subject: "Gift card rejected",
+        text: `Your gift card submission was rejected.\n\nBrand: ${before.brand}\nValue: $${(before.valueUsdCents / 100).toFixed(2)}\n\nSubmission ID: ${before.id}\nNotes: ${updated.reviewNotes ?? "-"}\n`,
+      });
+    }
+  }
 
   res.json({ ok: true });
 });

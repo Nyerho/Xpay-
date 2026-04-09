@@ -16,6 +16,7 @@ import {
 } from "../validators";
 import { writeAuditLog } from "../audit";
 import { circleCreateUserWallets, getCircleBlockchains, isCircleEnabled } from "../circle";
+import { sendEmail } from "../notify";
 
 export const consumerRouter = Router();
 
@@ -1077,6 +1078,12 @@ consumerRouter.post("/gift-cards", requireAuth, async (req: AuthenticatedRequest
     after: { brand: brandKey, valueUsdCents: parsed.data.valueUsdCents, offerUsdtCents },
   });
 
+  await sendEmail({
+    to: user.email,
+    subject: "Gift card submitted",
+    text: `Your ${brandKey} gift card submission was received.\n\nValue: $${(parsed.data.valueUsdCents / 100).toFixed(2)}\nOffer: ${(offerUsdtCents / 100).toFixed(2)} USDT\nStatus: REVIEWING\n\nSubmission ID: ${submission.id}\n`,
+  });
+
   res.status(201).json({ id: submission.id, offerUsdtCents, status: submission.status });
 });
 
@@ -1162,7 +1169,7 @@ consumerRouter.post("/gift-cards/buy", requireAuth, async (req: AuthenticatedReq
           },
         });
 
-        return { ok: true as const, itemId: item.id, code: item.code };
+        return { ok: true as const, itemId: item.id };
       });
 
       if (!result.ok) {
@@ -1179,7 +1186,13 @@ consumerRouter.post("/gift-cards/buy", requireAuth, async (req: AuthenticatedReq
         after: { brand: brandKey, valueUsdCents, priceUsdCents },
       });
 
-      res.json({ ok: true, itemId: result.itemId, code: result.code, priceUsdCents });
+      await sendEmail({
+        to: user.email,
+        subject: "Gift card purchase confirmed",
+        text: `Your gift card purchase is confirmed.\n\nBrand: ${brandKey}\nValue: $${(valueUsdCents / 100).toFixed(2)}\nPrice: $${(priceUsdCents / 100).toFixed(2)}\n\nOpen the app to reveal your code in Gift Cards → Buy → My purchases.\nPurchase ID: ${result.itemId}\n`,
+      });
+
+      res.json({ ok: true, itemId: result.itemId, priceUsdCents });
       return;
     } catch (err) {
       if (attempt === 2) {
