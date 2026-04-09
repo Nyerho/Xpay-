@@ -186,6 +186,25 @@ export function ActivityPage() {
                   </div>
                 ) : null}
 
+                {detail.type === 'WITHDRAWAL' && detail.asset?.startsWith('NGN:') ? (
+                  <div className="mt-3">
+                    <div className="row g-2">
+                      <div className="col-12 col-md-6">
+                        <div className="text-muted small">Bank</div>
+                        <div className="fw-semibold">
+                          {getString(receipt.meta, 'bankName') || getString(receipt.meta, 'bankCode') || '—'}
+                        </div>
+                      </div>
+                      <div className="col-12 col-md-6">
+                        <div className="text-muted small">Account</div>
+                        <div className="fw-semibold">{getString(receipt.meta, 'accountNumber') || '—'}</div>
+                      </div>
+                    </div>
+                    <div className="text-muted small mt-2">Reference</div>
+                    <div className="font-monospace small">{getString(receipt.meta, 'reference') || '—'}</div>
+                  </div>
+                ) : null}
+
                 <div className="mt-3">
                   <div className="text-muted small">Transaction ID</div>
                   <div className="d-flex gap-2 align-items-center">

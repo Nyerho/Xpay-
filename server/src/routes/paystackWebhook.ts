@@ -1,6 +1,7 @@
 import type { RequestHandler } from "express";
 import { prisma } from "../prisma";
 import { paystackVerifyWebhookSignature } from "../paystack";
+import { sendEmail } from "../notify";
 
 function toDbErrorCode(err: unknown) {
   if (!err || typeof err !== "object") return null;
@@ -115,6 +116,14 @@ export const paystackWebhookHandler: RequestHandler = async (req, res) => {
               where: { id: t.id },
               data: { status: "COMPLETE", metadataJson: JSON.stringify({ ...meta, paystack: { eventId, reference, transferCode, status, amountKobo } }) },
             });
+            const user = await prisma.user.findUnique({ where: { id: t.userId } });
+            if (user?.email) {
+              await sendEmail({
+                to: user.email,
+                subject: "NGN withdrawal successful",
+                text: `Your NGN withdrawal is complete.\n\nAmount: ₦${(Number(kobo ?? 0) / 100).toFixed(2)}\nReference: ${reference}\n`,
+              });
+            }
           } else {
             await prisma.$transaction(async (p) => {
               await p.transaction.update({
@@ -125,6 +134,14 @@ export const paystackWebhookHandler: RequestHandler = async (req, res) => {
                 await p.balance.update({ where: { userId: t.userId }, data: { ngnKobo: { increment: kobo } } });
               }
             });
+            const user = await prisma.user.findUnique({ where: { id: t.userId } });
+            if (user?.email) {
+              await sendEmail({
+                to: user.email,
+                subject: "NGN withdrawal failed",
+                text: `Your NGN withdrawal failed.\n\nAmount: ₦${(Number(kobo ?? 0) / 100).toFixed(2)}\nReference: ${reference}\nThe amount has been returned to your NGN wallet if previously debited.\n`,
+              });
+            }
           }
         }
       }

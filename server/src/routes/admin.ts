@@ -1,4 +1,5 @@
 import { Router } from "express";
+import crypto from "node:crypto";
 import { prisma } from "../prisma";
 import { requireAuth, type AuthenticatedRequest } from "../auth";
 import { requireMinRole, requireAnyRole } from "../rbac";
@@ -16,6 +17,7 @@ import { hashPassword } from "../auth";
 import { writeAuditLog } from "../audit";
 import { circleCreateOutboundUsdcTransfer, getCircleBlockchains, isCircleEnabled } from "../circle";
 import { sendEmail } from "../notify";
+import { paystackInitiateTransfer } from "../paystack";
 
 export const adminRouter = Router();
 
@@ -686,6 +688,107 @@ adminRouter.post("/transactions/:id/settle", requireMinRole("FINANCE"), async (r
     entity: "Transaction",
     entityId: tx.id,
     after: { status: "COMPLETE", asset: tx.asset, amount: amountStr },
+  });
+
+  res.json({ ok: true });
+});
+
+adminRouter.post("/transactions/:id/retry-payout", requireMinRole("FINANCE"), async (req: AuthenticatedRequest, res) => {
+  const id = param(req.params.id);
+  const tx = await prisma.transaction.findUnique({ where: { id } });
+  if (!tx) {
+    res.status(404).json({ error: "not_found" });
+    return;
+  }
+  if (tx.type !== "WITHDRAWAL") {
+    res.status(400).json({ error: "unsupported_type" });
+    return;
+  }
+  if (tx.status !== "FAILED") {
+    res.status(409).json({ error: "not_failed" });
+    return;
+  }
+  if (tx.asset !== "NGN:PAYSTACK_TRANSFER") {
+    res.status(400).json({ error: "unsupported_asset" });
+    return;
+  }
+  if (process.env.PAYSTACK_PAYOUTS_ENABLED !== "true") {
+    res.status(501).json({ error: "paystack_payouts_disabled" });
+    return;
+  }
+
+  let meta: any = {};
+  try {
+    meta = JSON.parse(tx.metadataJson || "{}");
+  } catch {
+    meta = {};
+  }
+
+  const amountKobo = typeof meta.amountKobo === "number" ? meta.amountKobo : null;
+  const recipientCode = typeof meta.recipientCode === "string" ? meta.recipientCode : null;
+  if (!amountKobo || amountKobo <= 0 || !recipientCode) {
+    res.status(400).json({ error: "missing_payout_details" });
+    return;
+  }
+
+  const user = await prisma.user.findUnique({ where: { id: tx.userId }, include: { balance: true } });
+  if (!user) {
+    res.status(404).json({ error: "user_not_found" });
+    return;
+  }
+  const balance = user.balance ?? (await prisma.balance.create({ data: { userId: user.id } }));
+  if (balance.ngnKobo < amountKobo) {
+    res.status(409).json({ error: "insufficient_funds" });
+    return;
+  }
+
+  const reference = `XPAY-WD-${crypto.randomBytes(6).toString("hex").toUpperCase()}`;
+  const externalRef = `paystack:transfer:${reference}`;
+
+  await prisma.$transaction(async (p) => {
+    await p.balance.update({ where: { userId: balance.userId }, data: { ngnKobo: { decrement: amountKobo } } });
+    await p.transaction.update({
+      where: { id: tx.id },
+      data: {
+        status: "PENDING",
+        externalRef,
+        metadataJson: JSON.stringify({
+          ...meta,
+          debited: true,
+          reference,
+          retryCount: (typeof meta.retryCount === "number" ? meta.retryCount : 0) + 1,
+        }),
+      },
+    });
+  });
+
+  try {
+    const transfer = await paystackInitiateTransfer({ amountKobo, recipientCode, reference, reason: "NGN Withdrawal retry" });
+    await prisma.transaction.update({
+      where: { id: tx.id },
+      data: { metadataJson: JSON.stringify({ ...meta, debited: true, reference, transfer, retryCount: (typeof meta.retryCount === "number" ? meta.retryCount : 0) + 1 }) },
+    });
+  } catch (err) {
+    await prisma.$transaction(async (p) => {
+      await p.transaction.update({ where: { id: tx.id }, data: { status: "FAILED" } });
+      await p.balance.update({ where: { userId: balance.userId }, data: { ngnKobo: { increment: amountKobo } } });
+    });
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg === "paystack_not_configured") {
+      res.status(501).json({ error: "paystack_not_configured" });
+      return;
+    }
+    res.status(502).json({ error: "transfer_failed" });
+    return;
+  }
+
+  await writeAuditLog({
+    req,
+    actorId: req.auth!.userId,
+    action: "admin.withdrawal.retry",
+    entity: "Transaction",
+    entityId: tx.id,
+    after: { externalRef },
   });
 
   res.json({ ok: true });

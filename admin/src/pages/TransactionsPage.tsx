@@ -20,6 +20,7 @@ export function TransactionsPage() {
   const [rows, setRows] = useState<Row[]>([])
   const [loading, setLoading] = useState(false)
   const [settlingId, setSettlingId] = useState<string | null>(null)
+  const [retryingId, setRetryingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const canSettle = me?.role === 'FINANCE' || me?.role === 'ADMIN' || me?.role === 'SUPERADMIN'
@@ -110,6 +111,28 @@ export function TransactionsPage() {
                         }}
                       >
                         Settle
+                      </button>
+                    ) : null}
+
+                    {canSettle && r.type === 'WITHDRAWAL' && r.status === 'FAILED' && r.asset === 'NGN:PAYSTACK_TRANSFER' ? (
+                      <button
+                        className="btn btn-sm btn-outline-warning ms-2"
+                        disabled={!token || retryingId === r.id}
+                        onClick={() => {
+                          if (!token) return
+                          setRetryingId(r.id)
+                          setError(null)
+                          apiFetch<{ ok: true }>(`/api/admin/transactions/${r.id}/retry-payout`, { method: 'POST', token })
+                            .then(() => load())
+                            .catch((e: unknown) => {
+                              const msg =
+                                e && typeof e === 'object' && 'error' in e ? String((e as { error: string }).error) : 'retry_failed'
+                              setError(msg)
+                            })
+                            .finally(() => setRetryingId(null))
+                        }}
+                      >
+                        Retry
                       </button>
                     ) : null}
                   </td>
