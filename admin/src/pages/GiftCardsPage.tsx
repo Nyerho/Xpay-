@@ -11,6 +11,8 @@ type Row = {
   valueUsdCents: number
   offerUsdtCents: number
   status: 'REVIEWING' | 'APPROVED' | 'REJECTED'
+  frontImageUrl: string | null
+  backImageUrl: string | null
   createdAt: string
   reviewedById: string | null
   reviewNotes: string | null
@@ -79,6 +81,7 @@ export function GiftCardsPage() {
                 <th>Value</th>
                 <th>Offer</th>
                 <th>Status</th>
+                <th>Images</th>
                 <th>Created</th>
                 <th style={{ width: 520 }}>Review</th>
               </tr>
@@ -97,6 +100,22 @@ export function GiftCardsPage() {
                     <span className={`badge ${r.status === 'APPROVED' ? 'bg-success' : r.status === 'REJECTED' ? 'bg-danger' : 'bg-secondary'}`}>
                       {r.status}
                     </span>
+                  </td>
+                  <td>
+                    <div className="d-flex flex-wrap gap-2">
+                      {r.frontImageUrl ? (
+                        <a className="btn btn-outline-secondary btn-sm" href={r.frontImageUrl} target="_blank" rel="noreferrer">
+                          Front
+                        </a>
+                      ) : (
+                        <span className="text-muted small">—</span>
+                      )}
+                      {r.backImageUrl ? (
+                        <a className="btn btn-outline-secondary btn-sm" href={r.backImageUrl} target="_blank" rel="noreferrer">
+                          Back
+                        </a>
+                      ) : null}
+                    </div>
                   </td>
                   <td className="text-muted small">{formatDate(r.createdAt)}</td>
                   <td>
@@ -141,7 +160,7 @@ export function GiftCardsPage() {
               ))}
               {rows.length === 0 && !loading ? (
                 <tr>
-                  <td colSpan={7} className="text-center text-muted py-4">
+                  <td colSpan={8} className="text-center text-muted py-4">
                     No submissions
                   </td>
                 </tr>

@@ -979,10 +979,24 @@ consumerRouter.get("/gift-cards/purchases", requireAuth, async (req: Authenticat
       id: i.id,
       brand: i.brand,
       valueUsdCents: i.valueUsdCents,
-      code: i.code,
       purchasedAt: i.purchasedAt,
     })),
   );
+});
+
+consumerRouter.get("/gift-cards/purchases/:id/code", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.auth!.userId } });
+  if (!user || user.role !== "CONSUMER") {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+  const id = param(req.params.id);
+  const item = await prisma.inventoryItem.findUnique({ where: { id } });
+  if (!item || item.purchasedById !== user.id || item.status !== "SOLD") {
+    res.status(404).json({ error: "not_found" });
+    return;
+  }
+  res.json({ id: item.id, code: item.code, brand: item.brand, valueUsdCents: item.valueUsdCents, purchasedAt: item.purchasedAt });
 });
 
 consumerRouter.post("/gift-cards", requireAuth, async (req: AuthenticatedRequest, res) => {

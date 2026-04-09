@@ -29,7 +29,6 @@ type Purchase = {
   id: string
   brand: string
   valueUsdCents: number
-  code: string
   purchasedAt: string | null
 }
 
@@ -49,6 +48,7 @@ export function CardsPage() {
   const [purchases, setPurchases] = useState<Purchase[]>([])
   const [buyBusy, setBuyBusy] = useState(false)
   const [lastCode, setLastCode] = useState<string | null>(null)
+  const [revealed, setRevealed] = useState<Record<string, string>>({})
 
   useEffect(() => {
     setLoading(true)
@@ -310,13 +310,23 @@ export function CardsPage() {
                           className="btn btn-sm btn-outline-light"
                           type="button"
                           onClick={() => {
-                            void navigator.clipboard.writeText(p.code)
+                            const code = revealed[p.id]
+                            if (code) {
+                              void navigator.clipboard.writeText(code)
+                              return
+                            }
+                            if (!token) return
+                            apiFetch<{ code: string }>(`/api/consumer/gift-cards/purchases/${p.id}/code`, { token })
+                              .then((r) => {
+                                setRevealed((prev) => ({ ...prev, [p.id]: r.code }))
+                              })
+                              .catch(() => setError('reveal_failed'))
                           }}
                         >
-                          Copy code
+                          {revealed[p.id] ? 'Copy code' : 'Reveal code'}
                         </button>
                       </div>
-                      <div className="font-monospace small mt-2">{p.code}</div>
+                      {revealed[p.id] ? <div className="font-monospace small mt-2">{revealed[p.id]}</div> : null}
                     </div>
                   ))}
                 </div>

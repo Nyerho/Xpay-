@@ -249,6 +249,8 @@ adminRouter.get("/gift-cards", async (req, res) => {
       valueUsdCents: s.valueUsdCents,
       offerUsdtCents: s.offerUsdtCents,
       status: s.status,
+      frontImageUrl: s.frontImageUrl,
+      backImageUrl: s.backImageUrl,
       createdAt: s.createdAt,
       reviewedById: s.reviewedById,
       reviewNotes: s.reviewNotes,
