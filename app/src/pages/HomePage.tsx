@@ -30,11 +30,11 @@ export function HomePage() {
     setLoading(true)
     setError(null)
     Promise.all([
-      apiFetch<{ usdCents: number; usdtCents: number; btcSats: number; ethWei: string }>('/api/consumer/balance', { token }),
+      apiFetch<{ usdCents: number; ngnKobo: number; usdtCents: number; btcSats: number; ethWei: string }>('/api/consumer/balance', { token }),
       apiFetch<{ status: string }>('/api/consumer/kyc', { token }),
     ])
       .then(([b, k]) => {
-        setUsdCents(b.usdCents + b.usdtCents)
+        setUsdCents(b.usdCents)
         setKycStatus(k.status)
       })
       .catch((e: unknown) => {
@@ -66,7 +66,7 @@ export function HomePage() {
       <div className="row g-2 mb-3">
         <ActionCard to="/buy" label="Buy" subtitle="Crypto onramp" />
         <ActionCard to="/sell" label="Sell" subtitle="Offramp to USD" />
-        <ActionCard to="/swap" label="Swap" subtitle="Crypto ↔ Crypto" />
+        <ActionCard to="/convert" label="Convert" subtitle="USD ↔ NGN ↔ Crypto" />
         <ActionCard to="/cards" label="Gift Cards" subtitle="Buy / sell cards" />
         <ActionCard to="/bills" label="Pay Bills" subtitle="US billers" />
         <ActionCard to="/deposit" label="Deposit" subtitle="Add funds" />

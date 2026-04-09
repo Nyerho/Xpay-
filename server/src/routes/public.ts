@@ -72,6 +72,20 @@ publicRouter.get("/quotes", async (_req, res) => {
   }
 });
 
+publicRouter.get("/fx", async (_req, res) => {
+  try {
+    const s = await prisma.setting.findUnique({ where: { key: "fxRates" } });
+    if (!s) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    res.json({ key: s.key, valueJson: s.valueJson, updatedAt: s.updatedAt });
+  } catch (err) {
+    process.stderr.write((err instanceof Error ? err.stack ?? err.message : String(err)) + "\n");
+    res.status(503).json({ error: "db_unavailable", code: toDbErrorCode(err) });
+  }
+});
+
 publicRouter.get("/gift-card-rates", async (_req, res) => {
   try {
     const s = await prisma.setting.findUnique({ where: { key: "giftCardRates" } });

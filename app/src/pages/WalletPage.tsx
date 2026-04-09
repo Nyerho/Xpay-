@@ -5,7 +5,7 @@ import { useAuth } from '../auth/useAuth'
 
 export function WalletPage() {
   const { token } = useAuth()
-  const [balance, setBalance] = useState<{ usdCents: number; usdtCents: number; btcSats: number; ethWei: string } | null>(null)
+  const [balance, setBalance] = useState<{ usdCents: number; ngnKobo: number; usdtCents: number; btcSats: number; ethWei: string } | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -13,7 +13,7 @@ export function WalletPage() {
     if (!token) return
     setLoading(true)
     setError(null)
-    apiFetch<{ usdCents: number; usdtCents: number; btcSats: number; ethWei: string }>('/api/consumer/balance', { token })
+    apiFetch<{ usdCents: number; ngnKobo: number; usdtCents: number; btcSats: number; ethWei: string }>('/api/consumer/balance', { token })
       .then(setBalance)
       .catch((e: unknown) => {
         const msg = e && typeof e === 'object' && 'error' in e ? String((e as { error: string }).error) : 'load_failed'
@@ -25,6 +25,7 @@ export function WalletPage() {
   const assets = balance
     ? [
         { symbol: 'USD', name: 'USD Balance', amount: (balance.usdCents / 100).toFixed(2), sub: 'Spendable' },
+        { symbol: 'NGN', name: 'Naira', amount: (balance.ngnKobo / 100).toFixed(2), sub: 'Local' },
         { symbol: 'USDT', name: 'USDT', amount: (balance.usdtCents / 100).toFixed(2), sub: 'TRC20 / ERC20' },
         { symbol: 'BTC', name: 'Bitcoin', amount: String(balance.btcSats), sub: 'sats' },
         { symbol: 'ETH', name: 'Ethereum', amount: balance.ethWei, sub: 'wei' },
@@ -56,6 +57,11 @@ export function WalletPage() {
         </div>
       </div>
       <div className="row g-2 mt-3">
+        <div className="col-12">
+          <Link className="btn btn-outline-light w-100" to="/convert">
+            Convert
+          </Link>
+        </div>
         <div className="col-6">
           <Link className="btn btn-outline-primary w-100" to="/deposit">
             Receive

@@ -65,6 +65,30 @@ export async function bootstrap() {
   }
 
   await prisma.setting.upsert({
+    where: { key: "fxRates" },
+    create: {
+      key: "fxRates",
+      valueJson: JSON.stringify({
+        USDNGN: { mid: 1500, buyBps: 100, sellBps: 100 },
+      }),
+      updatedById: null,
+    },
+    update: {},
+  });
+
+  const fxJson = process.env.FX_JSON;
+  if (fxJson && fxJson.trim().length > 0) {
+    try {
+      const v = JSON.parse(fxJson) as any;
+      const ok = v && typeof v === "object" && typeof v.USDNGN?.mid === "number";
+      if (ok) {
+        await prisma.setting.update({ where: { key: "fxRates" }, data: { valueJson: fxJson } });
+      }
+    } catch {
+    }
+  }
+
+  await prisma.setting.upsert({
     where: { key: "giftCardRates" },
     create: {
       key: "giftCardRates",

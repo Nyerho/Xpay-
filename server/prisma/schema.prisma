@@ -44,6 +44,7 @@ enum TxType {
   CRYPTO_BUY
   CRYPTO_SELL
   SWAP
+  CONVERT
   GIFT_CARD_SELL
   GIFT_CARD_BUY
   BILL_PAY
@@ -79,6 +80,7 @@ model Balance {
   user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   usdCents  Int @default(0)
+  ngnKobo   Int @default(0)
   usdtCents Int @default(0)
   btcSats   Int @default(0)
   ethWei    String @default("0")

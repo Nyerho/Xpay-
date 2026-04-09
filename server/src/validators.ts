@@ -94,3 +94,9 @@ export const consumerUsdcWithdrawalSchema = z.object({
   usdCents: z.number().int().min(100),
   address: z.string().min(12).max(256),
 });
+
+export const consumerConvertSchema = z.object({
+  from: z.enum(["USD", "NGN", "USDT", "BTC", "ETH"]),
+  to: z.enum(["USD", "NGN", "USDT", "BTC", "ETH"]),
+  amount: z.string().min(1).max(64),
+});

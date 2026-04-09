@@ -5,6 +5,7 @@ import {
   consumerDepositRequestSchema,
   consumerCryptoBuySchema,
   consumerCryptoSellSchema,
+  consumerConvertSchema,
   consumerSwapRequestSchema,
   consumerUsdcWithdrawalSchema,
   consumerWithdrawalRequestSchema,
@@ -63,12 +64,40 @@ async function getQuotes() {
   return { updatedAt: s.updatedAt, USDT: q("USDT"), BTC: q("BTC"), ETH: q("ETH") };
 }
 
+async function getFx() {
+  const s = await prisma.setting.findUnique({ where: { key: "fxRates" } });
+  if (!s) return null;
+  let parsed: any = {};
+  try {
+    parsed = JSON.parse(s.valueJson || "{}");
+  } catch {
+    parsed = {};
+  }
+  const mid = typeof parsed?.USDNGN?.mid === "number" ? parsed.USDNGN.mid : null;
+  const buyBps = typeof parsed?.USDNGN?.buyBps === "number" ? parsed.USDNGN.buyBps : 0;
+  const sellBps = typeof parsed?.USDNGN?.sellBps === "number" ? parsed.USDNGN.sellBps : 0;
+  if (!mid || !Number.isFinite(mid) || mid <= 0) return null;
+  return { updatedAt: s.updatedAt, USDNGN: { mid, buyBps, sellBps } };
+}
+
 async function requireKycApproved(userId: string) {
   const required = process.env.TRADING_REQUIRE_KYC === "true";
   if (!required) return true;
   const latest = await prisma.kycCase.findFirst({ where: { userId }, orderBy: { createdAt: "desc" } });
   if (!latest || latest.status !== "APPROVED") return false;
   return true;
+}
+
+function parseMoneyToMinor(amount: string, decimals: number) {
+  return parseDecimalToBigInt(amount, decimals);
+}
+
+function fxRateUsdToNgn(mid: number, sellBps: number) {
+  return Math.max(1, Math.floor((mid * (10000 - sellBps)) / 10000));
+}
+
+function fxRateNgnToUsdDiv(mid: number, buyBps: number) {
+  return Math.max(1, Math.floor((mid * (10000 + buyBps)) / 10000));
 }
 
 consumerRouter.post("/auth/signup", async (req, res) => {
@@ -185,6 +214,7 @@ consumerRouter.get("/balance", requireAuth, async (req: AuthenticatedRequest, re
   const b = user.balance ?? (await prisma.balance.create({ data: { userId: user.id } }));
   res.json({
     usdCents: b.usdCents,
+    ngnKobo: b.ngnKobo,
     usdtCents: b.usdtCents,
     btcSats: b.btcSats,
     ethWei: b.ethWei,
@@ -495,6 +525,192 @@ consumerRouter.post("/trade/sell", requireAuth, async (req: AuthenticatedRequest
     action: "consumer.trade.sell",
     entity: "Transaction",
     after: { asset, amount },
+  });
+
+  res.json({ ok: true });
+});
+
+consumerRouter.post("/convert", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const parsed = consumerConvertSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "invalid_body" });
+    return;
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: req.auth!.userId },
+    include: { balance: true },
+  });
+  if (!user || user.role !== "CONSUMER") {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+  if (user.isFrozen) {
+    res.status(403).json({ error: "user_frozen" });
+    return;
+  }
+
+  const { from, to, amount } = parsed.data;
+  if (from === to) {
+    res.status(400).json({ error: "same_asset" });
+    return;
+  }
+
+  const cryptoSet = new Set(["USDT", "BTC", "ETH"]);
+  const involvesCrypto = cryptoSet.has(from) || cryptoSet.has(to);
+  if (involvesCrypto) {
+    const kycOk = await requireKycApproved(user.id);
+    if (!kycOk) {
+      res.status(403).json({ error: "kyc_required" });
+      return;
+    }
+  }
+
+  const b = user.balance ?? (await prisma.balance.create({ data: { userId: user.id } }));
+  const quotes = involvesCrypto ? await getQuotes() : null;
+  if (involvesCrypto && !quotes) {
+    res.status(503).json({ error: "quotes_unavailable" });
+    return;
+  }
+  const fx = (from === "NGN" || to === "NGN") ? await getFx() : null;
+  if ((from === "NGN" || to === "NGN") && !fx) {
+    res.status(503).json({ error: "fx_unavailable" });
+    return;
+  }
+
+  function minorForAsset(a: string, amt: string) {
+    if (a === "USD") return parseMoneyToMinor(amt, 2);
+    if (a === "NGN") return parseMoneyToMinor(amt, 2);
+    if (a === "USDT") return parseMoneyToMinor(amt, 2);
+    if (a === "BTC") return parseMoneyToMinor(amt, 8);
+    if (a === "ETH") return parseMoneyToMinor(amt, 18);
+    return null;
+  }
+
+  const fromMinor = minorForAsset(from, amount);
+  if (!fromMinor || fromMinor <= 0n) {
+    res.status(400).json({ error: "invalid_amount" });
+    return;
+  }
+
+  function usdCentsFromAsset(a: string, minor: bigint) {
+    if (a === "USD") return minor;
+    if (a === "NGN") {
+      const rateDiv = fxRateNgnToUsdDiv(fx!.USDNGN.mid, fx!.USDNGN.buyBps);
+      return minor / BigInt(rateDiv);
+    }
+    if (a === "USDT") {
+      const q = quotes!.USDT!;
+      return (minor * BigInt(q.sellPriceUsdCents)) / 100n;
+    }
+    if (a === "BTC") {
+      const q = quotes!.BTC!;
+      return (minor * BigInt(q.sellPriceUsdCents)) / 100000000n;
+    }
+    if (a === "ETH") {
+      const q = quotes!.ETH!;
+      return (minor * BigInt(q.sellPriceUsdCents)) / 1000000000000000000n;
+    }
+    return null;
+  }
+
+  function assetFromUsdCents(a: string, usdCents: bigint) {
+    if (a === "USD") return usdCents;
+    if (a === "NGN") {
+      const rate = fxRateUsdToNgn(fx!.USDNGN.mid, fx!.USDNGN.sellBps);
+      return usdCents * BigInt(rate);
+    }
+    if (a === "USDT") {
+      const q = quotes!.USDT!;
+      return (usdCents * 100n) / BigInt(q.buyPriceUsdCents);
+    }
+    if (a === "BTC") {
+      const q = quotes!.BTC!;
+      return (usdCents * 100000000n) / BigInt(q.buyPriceUsdCents);
+    }
+    if (a === "ETH") {
+      const q = quotes!.ETH!;
+      return (usdCents * 1000000000000000000n) / BigInt(q.buyPriceUsdCents);
+    }
+    return null;
+  }
+
+  const usdCentsValue = usdCentsFromAsset(from, fromMinor);
+  if (!usdCentsValue || usdCentsValue <= 0n) {
+    res.status(400).json({ error: "amount_too_small" });
+    return;
+  }
+  const toMinor = assetFromUsdCents(to, usdCentsValue);
+  if (!toMinor || toMinor <= 0n) {
+    res.status(400).json({ error: "amount_too_small" });
+    return;
+  }
+
+  if (from === "USD" && b.usdCents < Number(fromMinor)) {
+    res.status(409).json({ error: "insufficient_funds" });
+    return;
+  }
+  if (from === "NGN" && b.ngnKobo < Number(fromMinor)) {
+    res.status(409).json({ error: "insufficient_funds" });
+    return;
+  }
+  if (from === "USDT" && b.usdtCents < Number(fromMinor)) {
+    res.status(409).json({ error: "insufficient_funds" });
+    return;
+  }
+  if (from === "BTC" && b.btcSats < Number(fromMinor)) {
+    res.status(409).json({ error: "insufficient_funds" });
+    return;
+  }
+  if (from === "ETH" && BigInt(b.ethWei || "0") < fromMinor) {
+    res.status(409).json({ error: "insufficient_funds" });
+    return;
+  }
+  if (toMinor > BigInt(2_000_000_000) && (to === "USDT" || to === "BTC" || to === "NGN" || to === "USD")) {
+    res.status(400).json({ error: "amount_too_large" });
+    return;
+  }
+
+  const update: any = {};
+  if (from === "USD") update.usdCents = { decrement: Number(fromMinor) };
+  if (from === "NGN") update.ngnKobo = { decrement: Number(fromMinor) };
+  if (from === "USDT") update.usdtCents = { decrement: Number(fromMinor) };
+  if (from === "BTC") update.btcSats = { decrement: Number(fromMinor) };
+  if (from === "ETH") update.ethWei = (BigInt(b.ethWei || "0") - fromMinor).toString();
+
+  if (to === "USD") update.usdCents = { ...(update.usdCents ?? {}), increment: Number(toMinor) };
+  if (to === "NGN") update.ngnKobo = { ...(update.ngnKobo ?? {}), increment: Number(toMinor) };
+  if (to === "USDT") update.usdtCents = { ...(update.usdtCents ?? {}), increment: Number(toMinor) };
+  if (to === "BTC") update.btcSats = { ...(update.btcSats ?? {}), increment: Number(toMinor) };
+  if (to === "ETH") update.ethWei = (BigInt(b.ethWei || "0") + toMinor).toString();
+
+  await prisma.$transaction(async (p) => {
+    await p.balance.update({ where: { userId: b.userId }, data: update });
+    await p.transaction.create({
+      data: {
+        userId: user.id,
+        type: "CONVERT",
+        status: "COMPLETE",
+        asset: `${from}->${to}`,
+        amountUsdCents: Number(usdCentsValue),
+        metadataJson: JSON.stringify({
+          from,
+          to,
+          fromAmount: amount,
+          usdCentsValue: usdCentsValue.toString(),
+          quotesUpdatedAt: quotes?.updatedAt ?? null,
+          fxUpdatedAt: fx?.updatedAt ?? null,
+        }),
+      },
+    });
+  });
+
+  await writeAuditLog({
+    req,
+    actorId: user.id,
+    action: "consumer.convert",
+    entity: "Transaction",
+    after: { from, to, amount },
   });
 
   res.json({ ok: true });
