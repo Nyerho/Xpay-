@@ -12,6 +12,7 @@ import {
   consumerGiftCardSubmitSchema,
   consumerGiftCardBuySchema,
   consumerNgnWithdrawalSchema,
+  consumerPaystackResolveSchema,
   consumerSwapRequestSchema,
   consumerUsdcWithdrawalSchema,
   consumerWithdrawalRequestSchema,
@@ -21,7 +22,13 @@ import {
 import { writeAuditLog } from "../audit";
 import { circleCreateUserWallets, getCircleBlockchains, isCircleEnabled } from "../circle";
 import { sendEmail } from "../notify";
-import { paystackInitializeTransaction } from "../paystack";
+import {
+  paystackCreateTransferRecipient,
+  paystackInitializeTransaction,
+  paystackInitiateTransfer,
+  paystackListBanks,
+  paystackResolveAccount,
+} from "../paystack";
 
 export const consumerRouter = Router();
 
@@ -1476,6 +1483,49 @@ consumerRouter.post("/deposits/ngn/paystack/initialize", requireAuth, async (req
   res.json({ authorizationUrl: init.authorizationUrl, reference: init.reference });
 });
 
+consumerRouter.get("/paystack/banks", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.auth!.userId } });
+  if (!user || user.role !== "CONSUMER") {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+  try {
+    const banks = await paystackListBanks();
+    res.json({ banks });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg === "paystack_not_configured") {
+      res.status(501).json({ error: "paystack_not_configured" });
+      return;
+    }
+    res.status(502).json({ error: "paystack_banks_failed" });
+  }
+});
+
+consumerRouter.post("/paystack/resolve-account", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const parsed = consumerPaystackResolveSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "invalid_body" });
+    return;
+  }
+  const user = await prisma.user.findUnique({ where: { id: req.auth!.userId } });
+  if (!user || user.role !== "CONSUMER") {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+  try {
+    const r = await paystackResolveAccount({ bankCode: parsed.data.bankCode, accountNumber: parsed.data.accountNumber });
+    res.json(r);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg === "paystack_not_configured") {
+      res.status(501).json({ error: "paystack_not_configured" });
+      return;
+    }
+    res.status(400).json({ error: "resolve_failed" });
+  }
+});
+
 consumerRouter.post("/withdrawals", requireAuth, async (req: AuthenticatedRequest, res) => {
   const parsed = consumerWithdrawalRequestSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -1577,34 +1627,145 @@ consumerRouter.post("/withdrawals/ngn", requireAuth, async (req: AuthenticatedRe
     return;
   }
 
-  const tx = await prisma.transaction.create({
-    data: {
-      userId: user.id,
-      type: "WITHDRAWAL",
-      status: "PENDING",
-      asset: "NGN:BANK",
-      amountUsdCents: null,
-      metadataJson: JSON.stringify({
-        asset: "NGN",
-        rail: "BANK",
-        amount,
-        bankName: parsed.data.bankName,
-        accountName: parsed.data.accountName,
-        accountNumber: parsed.data.accountNumber,
-      }),
-    },
-  });
+  const payoutsEnabled = process.env.PAYSTACK_PAYOUTS_ENABLED === "true";
+  if (!payoutsEnabled) {
+    const tx = await prisma.transaction.create({
+      data: {
+        userId: user.id,
+        type: "WITHDRAWAL",
+        status: "PENDING",
+        asset: "NGN:BANK",
+        amountUsdCents: null,
+        metadataJson: JSON.stringify({
+          asset: "NGN",
+          rail: "BANK",
+          amount,
+          bankName: parsed.data.bankName ?? null,
+          accountName: parsed.data.accountName ?? null,
+          accountNumber: parsed.data.accountNumber,
+        }),
+      },
+    });
+
+    await writeAuditLog({
+      req,
+      actorId: user.id,
+      action: "consumer.withdrawal.ngn.request",
+      entity: "Transaction",
+      entityId: tx.id,
+      after: { amount, rail: "BANK" },
+    });
+
+    res.status(201).json({ id: tx.id, status: tx.status });
+    return;
+  }
+
+  const bankCode = parsed.data.bankCode?.trim() || "";
+  if (!bankCode) {
+    res.status(400).json({ error: "bank_code_required" });
+    return;
+  }
+
+  let accountName = parsed.data.accountName?.trim() || "";
+  try {
+    const resolved = await paystackResolveAccount({ bankCode, accountNumber: parsed.data.accountNumber });
+    accountName = resolved.accountName;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg === "paystack_not_configured") {
+      res.status(501).json({ error: "paystack_not_configured" });
+      return;
+    }
+    res.status(400).json({ error: "resolve_failed" });
+    return;
+  }
+
+  let recipient: { recipientCode: string };
+  try {
+    recipient = await paystackCreateTransferRecipient({ bankCode, accountNumber: parsed.data.accountNumber, name: accountName });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg === "paystack_not_configured") {
+      res.status(501).json({ error: "paystack_not_configured" });
+      return;
+    }
+    res.status(502).json({ error: "recipient_failed" });
+    return;
+  }
+
+  const reference = `XPAY-WD-${crypto.randomBytes(6).toString("hex").toUpperCase()}`;
+  let createdTxId: string;
+  try {
+    const created = await prisma.$transaction(async (p) => {
+      await p.balance.update({ where: { userId: b.userId }, data: { ngnKobo: { decrement: kobo } } });
+      const tx = await p.transaction.create({
+        data: {
+          userId: user.id,
+          type: "WITHDRAWAL",
+          status: "PENDING",
+          asset: "NGN:PAYSTACK_TRANSFER",
+          amountUsdCents: null,
+          externalRef: `paystack:transfer:${reference}`,
+          metadataJson: JSON.stringify({
+            provider: "paystack",
+            asset: "NGN",
+            rail: "PAYSTACK_TRANSFER",
+            amount,
+            amountKobo: kobo,
+            debited: true,
+            reference,
+            bankCode,
+            bankName: parsed.data.bankName ?? null,
+            accountNumber: parsed.data.accountNumber,
+            accountName,
+            recipientCode: recipient.recipientCode,
+          }),
+        },
+      });
+      return tx;
+    });
+    createdTxId = created.id;
+  } catch (err) {
+    process.stderr.write((err instanceof Error ? err.stack ?? err.message : String(err)) + "\n");
+    res.status(503).json({ error: "db_unavailable", code: toDbErrorCode(err) });
+    return;
+  }
+
+  try {
+    const transfer = await paystackInitiateTransfer({
+      amountKobo: kobo,
+      recipientCode: recipient.recipientCode,
+      reference,
+      reason: "NGN Withdrawal",
+    });
+    await prisma.transaction.update({
+      where: { id: createdTxId },
+      data: { metadataJson: JSON.stringify({ ...(safeJsonParse((await prisma.transaction.findUnique({ where: { id: createdTxId } }))?.metadataJson || "{}") as any), transfer }) },
+    });
+  } catch (err) {
+    await prisma.$transaction(async (p) => {
+      await p.transaction.update({ where: { id: createdTxId }, data: { status: "FAILED" } });
+      await p.balance.update({ where: { userId: b.userId }, data: { ngnKobo: { increment: kobo } } });
+    });
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg === "paystack_not_configured") {
+      res.status(501).json({ error: "paystack_not_configured" });
+      return;
+    }
+    res.status(502).json({ error: "transfer_failed" });
+    return;
+  }
 
   await writeAuditLog({
     req,
     actorId: user.id,
-    action: "consumer.withdrawal.ngn.request",
+    action: "consumer.withdrawal.ngn.paystack.submit",
     entity: "Transaction",
-    entityId: tx.id,
-    after: { amount, bankName: parsed.data.bankName },
+    entityId: createdTxId,
+    after: { amount, rail: "PAYSTACK_TRANSFER" },
   });
 
-  res.status(201).json({ id: tx.id, status: tx.status });
+  res.status(201).json({ id: createdTxId, status: "PENDING" });
 });
 
 consumerRouter.post("/withdrawals/usdc", requireAuth, async (req: AuthenticatedRequest, res) => {

@@ -90,8 +90,14 @@ export const consumerWithdrawalRequestSchema = z.object({
 
 export const consumerNgnWithdrawalSchema = z.object({
   amount: z.string().min(1).max(64),
-  bankName: z.string().min(2).max(64),
-  accountName: z.string().min(2).max(64),
+  bankCode: z.string().min(2).max(16).optional(),
+  bankName: z.string().min(2).max(64).optional(),
+  accountName: z.string().min(2).max(64).optional(),
+  accountNumber: z.string().min(6).max(20),
+});
+
+export const consumerPaystackResolveSchema = z.object({
+  bankCode: z.string().min(2).max(16),
   accountNumber: z.string().min(6).max(20),
 });
 

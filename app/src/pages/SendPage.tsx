@@ -1,7 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../api'
 import { useAuth } from '../auth/useAuth'
+
+type Bank = { name: string; code: string }
 
 export function SendPage() {
   const { token } = useAuth()
@@ -11,11 +13,13 @@ export function SendPage() {
   const [address, setAddress] = useState('')
   const [memo, setMemo] = useState('')
   const [amountNgn, setAmountNgn] = useState('')
-  const [bankName, setBankName] = useState('')
+  const [banks, setBanks] = useState<Bank[]>([])
+  const [bankCode, setBankCode] = useState('')
   const [accountName, setAccountName] = useState('')
   const [accountNumber, setAccountNumber] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [resolving, setResolving] = useState(false)
 
   const usdCents = useMemo(() => {
     const m = amountUsd.trim().match(/^(\d+)(?:\.(\d{0,2}))?$/)
@@ -34,6 +38,17 @@ export function SendPage() {
     const kobo = whole * 100 + Number(frac || '0')
     return Number.isFinite(kobo) && kobo >= 100 ? amountNgn.trim() : null
   }, [amountNgn])
+
+  useEffect(() => {
+    if (!token) return
+    if (method !== 'NGN') return
+    apiFetch<{ banks: Bank[] }>('/api/consumer/paystack/banks', { token })
+      .then((r) => {
+        setBanks(r.banks)
+        if (!bankCode && r.banks.length) setBankCode(r.banks[0]!.code)
+      })
+      .catch(() => setBanks([]))
+  }, [bankCode, method, token])
 
   return (
     <div className="container xpay-fade-in" style={{ maxWidth: 760 }}>
@@ -109,17 +124,24 @@ export function SendPage() {
                 <div className="col-12 col-md-4">
                   <label className="form-label">Amount (NGN)</label>
                   <input className="form-control" value={amountNgn} onChange={(e) => setAmountNgn(e.target.value)} inputMode="decimal" />
-                  <div className="text-muted small mt-1">Manual bank payout after review.</div>
+                  <div className="text-muted small mt-1">Payout to your bank via Paystack.</div>
                 </div>
                 <div className="col-12 col-md-8">
-                  <label className="form-label">Bank name</label>
-                  <input className="form-control" value={bankName} onChange={(e) => setBankName(e.target.value)} />
+                  <label className="form-label">Bank</label>
+                  <select className="form-select" value={bankCode} onChange={(e) => setBankCode(e.target.value)}>
+                    {banks.length === 0 ? <option value="">Loading…</option> : null}
+                    {banks.map((b) => (
+                      <option key={b.code} value={b.code}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
               <div className="row g-2 mt-2">
                 <div className="col-12 col-md-6">
                   <label className="form-label">Account name</label>
-                  <input className="form-control" value={accountName} onChange={(e) => setAccountName(e.target.value)} />
+                  <input className="form-control" value={accountName} readOnly placeholder="Resolve account number" />
                 </div>
                 <div className="col-12 col-md-6">
                   <label className="form-label">Account number</label>
@@ -127,11 +149,34 @@ export function SendPage() {
                 </div>
               </div>
 
-              <div className="text-muted small mt-2">Submitting creates a withdrawal request. Finance reviews and pays out to your bank account.</div>
+              <div className="d-flex gap-2 mt-2">
+                <button
+                  className="btn btn-outline-light w-100"
+                  type="button"
+                  disabled={!token || resolving || !bankCode || !accountNumber.trim()}
+                  onClick={() => {
+                    if (!token) return
+                    setResolving(true)
+                    setError(null)
+                    apiFetch<{ accountName: string }>('/api/consumer/paystack/resolve-account', {
+                      method: 'POST',
+                      token,
+                      body: { bankCode, accountNumber: accountNumber.trim() },
+                    })
+                      .then((r) => setAccountName(r.accountName))
+                      .catch(() => setError('resolve_failed'))
+                      .finally(() => setResolving(false))
+                  }}
+                >
+                  {resolving ? 'Resolving…' : 'Resolve account'}
+                </button>
+              </div>
+
+              <div className="text-muted small mt-2">Submitting sends your payout request automatically.</div>
 
               <button
                 className="btn btn-primary w-100 mt-3"
-                disabled={!token || busy || !ngnAmount || !bankName.trim() || !accountName.trim() || !accountNumber.trim()}
+                disabled={!token || busy || !ngnAmount || !bankCode || !accountName.trim() || !accountNumber.trim()}
                 type="button"
                 onClick={() => {
                   if (!token || !ngnAmount) return
@@ -140,7 +185,7 @@ export function SendPage() {
                   apiFetch<{ id: string; status: string }>('/api/consumer/withdrawals/ngn', {
                     method: 'POST',
                     token,
-                    body: { amount: ngnAmount, bankName: bankName.trim(), accountName: accountName.trim(), accountNumber: accountNumber.trim() },
+                    body: { amount: ngnAmount, bankCode, accountName: accountName.trim(), accountNumber: accountNumber.trim() },
                   })
                     .then(() => navigate('/activity'))
                     .catch((e: unknown) => {

@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 
 export type PaystackInitResult = { authorizationUrl: string; reference: string };
+export type PaystackBank = { name: string; code: string };
 
 function getPaystackSecretKey() {
   const key = process.env.PAYSTACK_SECRET_KEY;
@@ -47,3 +48,75 @@ export async function paystackInitializeTransaction(params: {
   return { authorizationUrl: url, reference };
 }
 
+export async function paystackListBanks(): Promise<PaystackBank[]> {
+  const secret = getPaystackSecretKey();
+  const res = await fetch("https://api.paystack.co/bank?currency=NGN&perPage=200", {
+    headers: { authorization: `Bearer ${secret}` },
+  });
+  const json = (await res.json().catch(() => null)) as any;
+  if (!res.ok) throw new Error(`paystack_banks_failed:${res.status}`);
+  const data = Array.isArray(json?.data) ? (json.data as unknown[]) : [];
+  const out: PaystackBank[] = [];
+  for (const row of data) {
+    if (!row || typeof row !== "object") continue;
+    const r = row as Record<string, unknown>;
+    const name = typeof r.name === "string" ? r.name : null;
+    const code = typeof r.code === "string" ? r.code : null;
+    if (name && code) out.push({ name, code });
+  }
+  return out;
+}
+
+export async function paystackResolveAccount(params: { accountNumber: string; bankCode: string }) {
+  const secret = getPaystackSecretKey();
+  const url = `https://api.paystack.co/bank/resolve?account_number=${encodeURIComponent(params.accountNumber)}&bank_code=${encodeURIComponent(
+    params.bankCode,
+  )}`;
+  const res = await fetch(url, { headers: { authorization: `Bearer ${secret}` } });
+  const json = (await res.json().catch(() => null)) as any;
+  if (!res.ok) throw new Error(`paystack_resolve_failed:${res.status}`);
+  const accountName = typeof json?.data?.account_name === "string" ? (json.data.account_name as string) : null;
+  if (!accountName) throw new Error("paystack_resolve_failed");
+  return { accountName };
+}
+
+export async function paystackCreateTransferRecipient(params: { bankCode: string; accountNumber: string; name: string }) {
+  const secret = getPaystackSecretKey();
+  const res = await fetch("https://api.paystack.co/transferrecipient", {
+    method: "POST",
+    headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      type: "nuban",
+      name: params.name,
+      account_number: params.accountNumber,
+      bank_code: params.bankCode,
+      currency: "NGN",
+    }),
+  });
+  const json = (await res.json().catch(() => null)) as any;
+  if (!res.ok) throw new Error(`paystack_recipient_failed:${res.status}`);
+  const recipientCode = typeof json?.data?.recipient_code === "string" ? (json.data.recipient_code as string) : null;
+  if (!recipientCode) throw new Error("paystack_recipient_failed");
+  return { recipientCode };
+}
+
+export async function paystackInitiateTransfer(params: { amountKobo: number; recipientCode: string; reference: string; reason?: string }) {
+  const secret = getPaystackSecretKey();
+  const res = await fetch("https://api.paystack.co/transfer", {
+    method: "POST",
+    headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      source: "balance",
+      amount: params.amountKobo,
+      recipient: params.recipientCode,
+      reference: params.reference,
+      reason: params.reason ?? "Withdrawal",
+    }),
+  });
+  const json = (await res.json().catch(() => null)) as any;
+  if (!res.ok) throw new Error(`paystack_transfer_failed:${res.status}`);
+  const transferCode = typeof json?.data?.transfer_code === "string" ? (json.data.transfer_code as string) : null;
+  const status = typeof json?.data?.status === "string" ? (json.data.status as string) : null;
+  if (!transferCode) throw new Error("paystack_transfer_failed");
+  return { transferCode, status };
+}

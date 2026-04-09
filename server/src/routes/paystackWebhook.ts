@@ -10,6 +10,14 @@ function toDbErrorCode(err: unknown) {
   return code ?? errorCode;
 }
 
+function safeJsonParse(s: string) {
+  try {
+    return JSON.parse(s || "{}") as any;
+  } catch {
+    return {};
+  }
+}
+
 export const paystackWebhookHandler: RequestHandler = async (req, res) => {
   try {
     const sig = req.header("x-paystack-signature");
@@ -89,10 +97,42 @@ export const paystackWebhookHandler: RequestHandler = async (req, res) => {
       }
     }
 
+    if (event === "transfer.success" || event === "transfer.failed" || event === "transfer.reversed") {
+      const reference = typeof data?.reference === "string" ? data.reference : null;
+      const status = typeof data?.status === "string" ? data.status : null;
+      const amountKobo = typeof data?.amount === "number" ? data.amount : null;
+      const transferCode = typeof data?.transfer_code === "string" ? data.transfer_code : null;
+
+      if (reference) {
+        const t = await prisma.transaction.findFirst({ where: { externalRef: `paystack:transfer:${reference}` } });
+        if (t && t.type === "WITHDRAWAL" && t.status === "PENDING") {
+          const meta = safeJsonParse(t.metadataJson);
+          const debited = Boolean(meta?.debited);
+          const kobo = typeof meta?.amountKobo === "number" ? (meta.amountKobo as number) : amountKobo;
+
+          if (event === "transfer.success" || status === "success") {
+            await prisma.transaction.update({
+              where: { id: t.id },
+              data: { status: "COMPLETE", metadataJson: JSON.stringify({ ...meta, paystack: { eventId, reference, transferCode, status, amountKobo } }) },
+            });
+          } else {
+            await prisma.$transaction(async (p) => {
+              await p.transaction.update({
+                where: { id: t.id },
+                data: { status: "FAILED", metadataJson: JSON.stringify({ ...meta, paystack: { eventId, reference, transferCode, status, amountKobo } }) },
+              });
+              if (debited && typeof kobo === "number" && kobo > 0) {
+                await p.balance.update({ where: { userId: t.userId }, data: { ngnKobo: { increment: kobo } } });
+              }
+            });
+          }
+        }
+      }
+    }
+
     res.json({ ok: true });
   } catch (err) {
     process.stderr.write((err instanceof Error ? err.stack ?? err.message : String(err)) + "\n");
     res.status(503).json({ error: "db_unavailable", code: toDbErrorCode(err) });
   }
 };
-
