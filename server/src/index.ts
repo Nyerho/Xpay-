@@ -12,10 +12,12 @@ async function runDbPushIfNeeded() {
   const skip = process.env.SKIP_DB_PUSH === "true";
   if (!hasDbUrl || skip) return;
 
+  const acceptDataLoss = process.env.DB_PUSH_ACCEPT_DATA_LOSS !== "false";
+
   await new Promise<void>((resolve, reject) => {
     const child = spawn(
       process.platform === "win32" ? "npx.cmd" : "npx",
-      ["prisma", "db", "push"],
+      ["prisma", "db", "push", ...(acceptDataLoss ? ["--accept-data-loss"] : [])],
       { stdio: "inherit" },
     );
     child.on("error", reject);
