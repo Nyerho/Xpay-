@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../api'
 import { useAuth } from '../auth/useAuth'
+import { LoadingAnimation } from '../components/LoadingAnimation'
 
 type NotificationRow = {
   id: string
@@ -51,7 +52,11 @@ export function NotificationsPage() {
 
       <div className="card xpay-card shadow-sm">
         <div className="list-group list-group-flush">
-          {loading ? <div className="list-group-item text-muted">Loading…</div> : null}
+          {loading ? (
+            <div className="list-group-item">
+              <LoadingAnimation label="Loading…" />
+            </div>
+          ) : null}
           {!loading && rows.length === 0 ? <div className="list-group-item text-muted">No notifications yet</div> : null}
           {rows.map((n) => (
             <button
@@ -83,4 +88,3 @@ export function NotificationsPage() {
     </div>
   )
 }
-

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../api'
 import { useAuth } from '../auth/useAuth'
+import { LoadingAnimation } from '../components/LoadingAnimation'
 
 function formatEth(wei: string) {
   try {
@@ -58,7 +59,9 @@ export function WalletPage() {
       <div className="card xpay-card shadow-sm">
         <div className="list-group list-group-flush">
           {loading || !balance ? (
-            <div className="list-group-item text-muted">Loading…</div>
+            <div className="list-group-item">
+              <LoadingAnimation label="Loading…" />
+            </div>
           ) : null}
           {!loading && balance && assets.length === 0 ? <div className="list-group-item text-muted">No assets</div> : null}
           {assets.map((a) => (

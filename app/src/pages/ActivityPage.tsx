@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../api'
 import { useAuth } from '../auth/useAuth'
+import { LoadingAnimation } from '../components/LoadingAnimation'
 
 type Row = {
   id: string
@@ -228,7 +229,11 @@ export function ActivityPage() {
 
       <div className="card xpay-card shadow-sm">
         <div className="list-group list-group-flush">
-          {loading ? <div className="list-group-item text-muted">Loading…</div> : null}
+          {loading ? (
+            <div className="list-group-item">
+              <LoadingAnimation label="Loading…" />
+            </div>
+          ) : null}
           {!loading && rows.length === 0 ? <div className="list-group-item text-muted">No activity yet</div> : null}
           {rows.map((r) => (
             <button
