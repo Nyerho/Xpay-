@@ -199,113 +199,133 @@ function formatNgnAmountFromMeta(meta: Record<string, unknown>) {
 }
 
 consumerRouter.post("/auth/signup", async (req, res) => {
-  const parsed = signupSchema.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: "invalid_body" });
-    return;
-  }
-
-  const email = parsed.data.email.toLowerCase();
-  const exists = await prisma.user.findUnique({ where: { email } });
-  if (exists) {
-    res.status(409).json({ error: "email_in_use" });
-    return;
-  }
-
-  const referralCode = parsed.data.referralCode?.trim().toUpperCase() ?? null;
-  const promoCode = parsed.data.promoCode?.trim().toUpperCase() ?? null;
-  let referredById: string | null = null;
-  if (referralCode) {
-    const referrer = await findReferrerByCode(referralCode);
-    if (referrer) referredById = referrer.id;
-  }
-
-  const passwordHash = await hashPassword(parsed.data.password);
-
-  const user = await prisma.user.create({
-    data: {
-      email,
-      phone: parsed.data.phone,
-      passwordHash,
-      role: "CONSUMER",
-      referredById,
-      balance: { create: {} },
-      kycCases: { create: { status: "PENDING" } },
-    },
-  });
-
-  await ensureUserReferralCode(user.id);
-
-  if (promoCode) {
-    const pc = await prisma.promoCode.findUnique({ where: { code: promoCode } });
-    const now = new Date();
-    if (pc && pc.isActive && (!pc.expiresAt || pc.expiresAt > now)) {
-      if (!pc.maxRedemptions || pc.redeemedCount < pc.maxRedemptions) {
-        try {
-          await prisma.promoRedemption.create({ data: { promoCodeId: pc.id, userId: user.id } });
-        } catch {}
-      }
+  try {
+    const parsed = signupSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
     }
+
+    const email = parsed.data.email.toLowerCase();
+    const exists = await prisma.user.findUnique({ where: { email } });
+    if (exists) {
+      res.status(409).json({ error: "email_in_use" });
+      return;
+    }
+
+    const referralCode = parsed.data.referralCode?.trim().toUpperCase() ?? null;
+    const promoCode = parsed.data.promoCode?.trim().toUpperCase() ?? null;
+    let referredById: string | null = null;
+    if (referralCode) {
+      const referrer = await findReferrerByCode(referralCode);
+      if (referrer) referredById = referrer.id;
+    }
+
+    const passwordHash = await hashPassword(parsed.data.password);
+
+    const user = await prisma.user.create({
+      data: {
+        email,
+        phone: parsed.data.phone,
+        passwordHash,
+        role: "CONSUMER",
+        referredById,
+        balance: { create: {} },
+        kycCases: { create: { status: "PENDING" } },
+      },
+    });
+
+    try {
+      await ensureUserReferralCode(user.id);
+    } catch {}
+
+    if (promoCode) {
+      try {
+        const pc = await prisma.promoCode.findUnique({ where: { code: promoCode } });
+        const now = new Date();
+        if (pc && pc.isActive && (!pc.expiresAt || pc.expiresAt > now)) {
+          if (!pc.maxRedemptions || pc.redeemedCount < pc.maxRedemptions) {
+            try {
+              await prisma.promoRedemption.create({ data: { promoCodeId: pc.id, userId: user.id } });
+            } catch {}
+          }
+        }
+      } catch {}
+    }
+
+    try {
+      await writeAuditLog({
+        req,
+        actorId: user.id,
+        action: "consumer.signup",
+        entity: "User",
+        entityId: user.id,
+        after: { email: user.email },
+      });
+    } catch {}
+
+    const token = signAccessToken({ userId: user.id, role: user.role });
+    res.status(201).json({
+      token,
+      user: { id: user.id, email: user.email, role: user.role },
+    });
+  } catch (err) {
+    process.stderr.write((err instanceof Error ? err.stack ?? err.message : String(err)) + "\n");
+    res.status(503).json({ error: "db_unavailable", code: toDbErrorCode(err) });
   }
-
-  await writeAuditLog({
-    req,
-    actorId: user.id,
-    action: "consumer.signup",
-    entity: "User",
-    entityId: user.id,
-    after: { email: user.email },
-  });
-
-  const token = signAccessToken({ userId: user.id, role: user.role });
-  res.status(201).json({
-    token,
-    user: { id: user.id, email: user.email, role: user.role },
-  });
 });
 
 consumerRouter.post("/auth/login", async (req, res) => {
-  const parsed = loginSchema.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: "invalid_body" });
-    return;
-  }
+  try {
+    const parsed = loginSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
 
-  const user = await prisma.user.findUnique({ where: { email: parsed.data.email.toLowerCase() } });
-  if (!user) {
-    res.status(401).json({ error: "invalid_credentials" });
-    return;
-  }
-  if (user.role !== "CONSUMER") {
-    res.status(403).json({ error: "not_consumer" });
-    return;
-  }
-  if (user.isFrozen) {
-    res.status(403).json({ error: "user_frozen" });
-    return;
-  }
+    const user = await prisma.user.findUnique({ where: { email: parsed.data.email.toLowerCase() } });
+    if (!user) {
+      res.status(401).json({ error: "invalid_credentials" });
+      return;
+    }
+    if (user.role !== "CONSUMER") {
+      res.status(403).json({ error: "not_consumer" });
+      return;
+    }
+    if (user.isFrozen) {
+      res.status(403).json({ error: "user_frozen" });
+      return;
+    }
 
-  const ok = await verifyPassword(parsed.data.password, user.passwordHash);
-  if (!ok) {
-    res.status(401).json({ error: "invalid_credentials" });
-    return;
+    const ok = await verifyPassword(parsed.data.password, user.passwordHash);
+    if (!ok) {
+      res.status(401).json({ error: "invalid_credentials" });
+      return;
+    }
+
+    try {
+      await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+    } catch {}
+
+    try {
+      await writeAuditLog({
+        req,
+        actorId: user.id,
+        action: "consumer.login",
+        entity: "User",
+        entityId: user.id,
+      });
+    } catch {}
+
+    const token = signAccessToken({ userId: user.id, role: user.role });
+    res.json({
+      token,
+      user: { id: user.id, email: user.email, role: user.role },
+    });
+  } catch (err) {
+    process.stderr.write((err instanceof Error ? err.stack ?? err.message : String(err)) + "\n");
+    res.status(503).json({ error: "db_unavailable", code: toDbErrorCode(err) });
   }
-
-  await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
-
-  await writeAuditLog({
-    req,
-    actorId: user.id,
-    action: "consumer.login",
-    entity: "User",
-    entityId: user.id,
-  });
-
-  const token = signAccessToken({ userId: user.id, role: user.role });
-  res.json({
-    token,
-    user: { id: user.id, email: user.email, role: user.role },
-  });
 });
 
 consumerRouter.get("/me", requireAuth, async (req: AuthenticatedRequest, res) => {
