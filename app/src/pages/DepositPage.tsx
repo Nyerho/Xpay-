@@ -44,6 +44,7 @@ export function DepositPage() {
   const [cfg, setCfg] = useState<DepositInstructions | null>(null)
   const [circle, setCircle] = useState<CircleDepositAddresses | null>(null)
   const [circleLoading, setCircleLoading] = useState(false)
+  const [circleError, setCircleError] = useState<string | null>(null)
 
   const [asset, setAsset] = useState<Asset>('USDT')
   const [rail, setRail] = useState<Rail>('TRC20')
@@ -73,9 +74,14 @@ export function DepositPage() {
   useEffect(() => {
     if (!token) return
     setCircleLoading(true)
+    setCircleError(null)
     apiFetch<CircleDepositAddresses>('/api/consumer/deposit-addresses', { token })
       .then((r) => setCircle(r))
-      .catch(() => setCircle(null))
+      .catch((e: unknown) => {
+        const msg = e && typeof e === 'object' && 'error' in e ? String((e as { error: string }).error) : 'circle_unavailable'
+        setCircle(null)
+        setCircleError(msg)
+      })
       .finally(() => setCircleLoading(false))
   }, [token])
 
@@ -125,6 +131,7 @@ export function DepositPage() {
       {tab === 'crypto' ? (
         <div className="card xpay-card shadow-sm">
           <div className="card-body">
+            {circleError ? <div className="alert alert-secondary py-2 mb-3">Circle: {circleError}</div> : null}
             {circle ? (
               <>
                 <div className="fw-semibold mb-2">{circle.asset} deposit addresses</div>
