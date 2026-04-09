@@ -31,6 +31,7 @@ import {
 } from "../paystack";
 import { paystackEstimateDepositFeeKobo, paystackEstimateTransferFeeKobo } from "../fees";
 import { createNotification } from "../notifications";
+import { ensureUserReferralCode, findReferrerByCode } from "../referrals";
 
 export const consumerRouter = Router();
 
@@ -211,6 +212,14 @@ consumerRouter.post("/auth/signup", async (req, res) => {
     return;
   }
 
+  const referralCode = parsed.data.referralCode?.trim().toUpperCase() ?? null;
+  const promoCode = parsed.data.promoCode?.trim().toUpperCase() ?? null;
+  let referredById: string | null = null;
+  if (referralCode) {
+    const referrer = await findReferrerByCode(referralCode);
+    if (referrer) referredById = referrer.id;
+  }
+
   const passwordHash = await hashPassword(parsed.data.password);
 
   const user = await prisma.user.create({
@@ -219,10 +228,25 @@ consumerRouter.post("/auth/signup", async (req, res) => {
       phone: parsed.data.phone,
       passwordHash,
       role: "CONSUMER",
+      referredById,
       balance: { create: {} },
       kycCases: { create: { status: "PENDING" } },
     },
   });
+
+  await ensureUserReferralCode(user.id);
+
+  if (promoCode) {
+    const pc = await prisma.promoCode.findUnique({ where: { code: promoCode } });
+    const now = new Date();
+    if (pc && pc.isActive && (!pc.expiresAt || pc.expiresAt > now)) {
+      if (!pc.maxRedemptions || pc.redeemedCount < pc.maxRedemptions) {
+        try {
+          await prisma.promoRedemption.create({ data: { promoCodeId: pc.id, userId: user.id } });
+        } catch {}
+      }
+    }
+  }
 
   await writeAuditLog({
     req,
@@ -290,12 +314,15 @@ consumerRouter.get("/me", requireAuth, async (req: AuthenticatedRequest, res) =>
     res.status(401).json({ error: "unauthorized" });
     return;
   }
+  const referralCode = await ensureUserReferralCode(user.id);
   res.json({
     id: user.id,
     email: user.email,
     phone: user.phone,
     mfaEnabled: user.mfaEnabled,
     isFrozen: user.isFrozen,
+    referralCode,
+    referredById: user.referredById,
   });
 });
 

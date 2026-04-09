@@ -10,6 +10,8 @@ export const signupSchema = z.object({
   email: z.string().email(),
   phone: z.string().min(7).max(32).optional(),
   password: z.string().min(8),
+  referralCode: z.string().min(3).max(32).optional(),
+  promoCode: z.string().min(3).max(32).optional(),
 });
 
 export const createUserSchema = z.object({
@@ -46,6 +48,21 @@ export const updateGiftCardSchema = z.object({
 
 export const upsertSettingSchema = z.object({
   valueJson: z.string().min(2),
+});
+
+export const createPromoCodeSchema = z.object({
+  code: z.string().min(3).max(32),
+  ngnBonusKobo: z.number().int().min(0),
+  maxRedemptions: z.number().int().min(1).max(1_000_000).optional(),
+  expiresAt: z.string().min(10).max(64).optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const updatePromoCodeSchema = z.object({
+  ngnBonusKobo: z.number().int().min(0).optional(),
+  maxRedemptions: z.number().int().min(1).max(1_000_000).nullable().optional(),
+  expiresAt: z.string().min(10).max(64).nullable().optional(),
+  isActive: z.boolean().optional(),
 });
 
 export const createInventorySchema = z.object({

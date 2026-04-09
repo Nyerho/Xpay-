@@ -42,10 +42,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       status,
       token,
       me,
-      signup: async (email: string, password: string, phone?: string) => {
+      signup: async (email: string, password: string, phone?: string, referralCode?: string, promoCode?: string) => {
         const res = await apiFetch<{ token: string }>('/api/consumer/auth/signup', {
           method: 'POST',
-          body: { email, password, phone },
+          body: { email, password, phone, referralCode: referralCode || undefined, promoCode: promoCode || undefined },
         })
         localStorage.setItem(tokenKey, res.token)
         setToken(res.token)
@@ -75,4 +75,3 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
-

@@ -5,11 +5,13 @@ import { requireAuth, type AuthenticatedRequest } from "../auth";
 import { requireMinRole, requireAnyRole } from "../rbac";
 import {
   createInventorySchema,
+  createPromoCodeSchema,
   createUserSchema,
   paginationSchema,
   updateGiftCardSchema,
   updateInventorySchema,
   updateKycSchema,
+  updatePromoCodeSchema,
   updateUserSchema,
   upsertSettingSchema,
 } from "../validators";
@@ -50,6 +52,86 @@ adminRouter.get("/users", async (req: AuthenticatedRequest, res) => {
     createdAt: u.createdAt,
     lastLoginAt: u.lastLoginAt,
   })));
+});
+
+adminRouter.get("/promo-codes", async (_req, res) => {
+  const items = await prisma.promoCode.findMany({ orderBy: { createdAt: "desc" }, take: 200 });
+  res.json(
+    items.map((p) => ({
+      id: p.id,
+      code: p.code,
+      ngnBonusKobo: p.ngnBonusKobo,
+      maxRedemptions: p.maxRedemptions,
+      redeemedCount: p.redeemedCount,
+      isActive: p.isActive,
+      expiresAt: p.expiresAt,
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+    })),
+  );
+});
+
+adminRouter.post("/promo-codes", requireMinRole("ADMIN"), async (req: AuthenticatedRequest, res) => {
+  const parsed = createPromoCodeSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "invalid_body" });
+    return;
+  }
+  const code = parsed.data.code.trim().toUpperCase();
+  const expiresAt = parsed.data.expiresAt ? new Date(parsed.data.expiresAt) : null;
+  const created = await prisma.promoCode.create({
+    data: {
+      code,
+      ngnBonusKobo: parsed.data.ngnBonusKobo,
+      maxRedemptions: parsed.data.maxRedemptions ?? null,
+      expiresAt,
+      isActive: parsed.data.isActive ?? true,
+    },
+  });
+  await writeAuditLog({
+    req,
+    actorId: req.auth!.userId,
+    action: "admin.promoCode.create",
+    entity: "PromoCode",
+    entityId: created.id,
+    after: { code: created.code, ngnBonusKobo: created.ngnBonusKobo },
+  });
+  res.status(201).json({ id: created.id });
+});
+
+adminRouter.patch("/promo-codes/:id", requireMinRole("ADMIN"), async (req: AuthenticatedRequest, res) => {
+  const parsed = updatePromoCodeSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "invalid_body" });
+    return;
+  }
+  const id = param(req.params.id);
+  const before = await prisma.promoCode.findUnique({ where: { id } });
+  if (!before) {
+    res.status(404).json({ error: "not_found" });
+    return;
+  }
+  const expiresAt =
+    parsed.data.expiresAt === undefined ? undefined : parsed.data.expiresAt === null ? null : new Date(parsed.data.expiresAt);
+  const updated = await prisma.promoCode.update({
+    where: { id },
+    data: {
+      ngnBonusKobo: parsed.data.ngnBonusKobo,
+      maxRedemptions: parsed.data.maxRedemptions === undefined ? undefined : parsed.data.maxRedemptions,
+      expiresAt,
+      isActive: parsed.data.isActive,
+    },
+  });
+  await writeAuditLog({
+    req,
+    actorId: req.auth!.userId,
+    action: "admin.promoCode.update",
+    entity: "PromoCode",
+    entityId: updated.id,
+    before: { ngnBonusKobo: before.ngnBonusKobo, isActive: before.isActive },
+    after: { ngnBonusKobo: updated.ngnBonusKobo, isActive: updated.isActive },
+  });
+  res.json({ ok: true });
 });
 
 adminRouter.post("/users", requireMinRole("ADMIN"), async (req: AuthenticatedRequest, res) => {

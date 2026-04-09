@@ -8,6 +8,7 @@ import { GiftCardsPage } from './pages/GiftCardsPage'
 import { InventoryPage } from './pages/InventoryPage'
 import { KycPage } from './pages/KycPage'
 import { LoginPage } from './pages/LoginPage'
+import { PromoCodesPage } from './pages/PromoCodesPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { TransactionsPage } from './pages/TransactionsPage'
 import { UsersPage } from './pages/UsersPage'
@@ -42,6 +43,7 @@ function AuthedApp() {
         <Route path="gift-cards" element={<GiftCardsPage />} />
         <Route path="inventory" element={<InventoryPage />} />
         <Route path="transactions" element={<TransactionsPage />} />
+        <Route path="promo-codes" element={<PromoCodesPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="audit" element={<AuditPage />} />
       </Route>

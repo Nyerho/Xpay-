@@ -117,6 +117,12 @@ export async function bootstrap() {
   });
 
   await prisma.setting.upsert({
+    where: { key: "referralConfig" },
+    create: { key: "referralConfig", valueJson: JSON.stringify({ referrerBonusKobo: 10000, referredBonusKobo: 10000 }), updatedById: null },
+    update: {},
+  });
+
+  await prisma.setting.upsert({
     where: { key: "depositInstructions" },
     create: { key: "depositInstructions", valueJson: JSON.stringify({}), updatedById: null },
     update: {},

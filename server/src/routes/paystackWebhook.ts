@@ -20,6 +20,116 @@ function safeJsonParse(s: string) {
   }
 }
 
+async function getReferralConfig() {
+  const s = await prisma.setting.findUnique({ where: { key: "referralConfig" } });
+  if (!s) return { referrerBonusKobo: 0, referredBonusKobo: 0 };
+  try {
+    const v = JSON.parse(s.valueJson || "{}") as any;
+    const referrerBonusKobo = typeof v?.referrerBonusKobo === "number" ? v.referrerBonusKobo : 0;
+    const referredBonusKobo = typeof v?.referredBonusKobo === "number" ? v.referredBonusKobo : 0;
+    return { referrerBonusKobo, referredBonusKobo };
+  } catch {
+    return { referrerBonusKobo: 0, referredBonusKobo: 0 };
+  }
+}
+
+async function applyPromoAndReferralBonus(params: { userId: string; depositTxId: string }) {
+  const user = await prisma.user.findUnique({ where: { id: params.userId } });
+  if (!user) return;
+
+  const promo = await prisma.promoRedemption.findFirst({
+    where: { userId: user.id, appliedAt: null },
+    orderBy: { createdAt: "asc" },
+    include: { promoCode: true },
+  });
+
+  if (promo) {
+    const now = new Date();
+    const pc = promo.promoCode;
+    if (pc.isActive && (!pc.expiresAt || pc.expiresAt > now)) {
+      if (!pc.maxRedemptions || pc.redeemedCount < pc.maxRedemptions) {
+        const bonus = pc.ngnBonusKobo;
+        if (bonus > 0) {
+          await prisma.$transaction(async (p) => {
+            const locked = await p.promoRedemption.findUnique({ where: { promoCodeId_userId: { promoCodeId: pc.id, userId: user.id } } });
+            if (!locked || locked.appliedAt) return;
+            const latest = await p.promoCode.findUnique({ where: { id: pc.id } });
+            if (!latest || !latest.isActive) return;
+            if (latest.expiresAt && latest.expiresAt <= now) return;
+            if (latest.maxRedemptions && latest.redeemedCount >= latest.maxRedemptions) return;
+            await p.balance.upsert({
+              where: { userId: user.id },
+              create: { userId: user.id, ngnKobo: bonus },
+              update: { ngnKobo: { increment: bonus } },
+            });
+            await p.promoCode.update({ where: { id: latest.id }, data: { redeemedCount: { increment: 1 } } });
+            await p.promoRedemption.update({
+              where: { id: locked.id },
+              data: { appliedAt: now, appliedTxId: params.depositTxId },
+            });
+          });
+          await createNotification({
+            userId: user.id,
+            type: "promo.applied",
+            title: "Promo bonus applied",
+            body: `₦${(bonus / 100).toFixed(2)} bonus credited.`,
+            link: "/wallet",
+          });
+        }
+      }
+    }
+  }
+
+  if (!user.referredById) return;
+  const cfg = await getReferralConfig();
+  if (cfg.referrerBonusKobo <= 0 && cfg.referredBonusKobo <= 0) return;
+
+  try {
+    await prisma.$transaction(async (p) => {
+      const exists = await p.referralRedemption.findUnique({ where: { referredUserId: user.id } });
+      if (exists) return;
+      await p.referralRedemption.create({
+        data: { referredUserId: user.id, referrerUserId: user.referredById!, appliedAt: new Date(), depositTxId: params.depositTxId },
+      });
+      if (cfg.referredBonusKobo > 0) {
+        await p.balance.upsert({
+          where: { userId: user.id },
+          create: { userId: user.id, ngnKobo: cfg.referredBonusKobo },
+          update: { ngnKobo: { increment: cfg.referredBonusKobo } },
+        });
+      }
+      if (cfg.referrerBonusKobo > 0) {
+        await p.balance.upsert({
+          where: { userId: user.referredById! },
+          create: { userId: user.referredById!, ngnKobo: cfg.referrerBonusKobo },
+          update: { ngnKobo: { increment: cfg.referrerBonusKobo } },
+        });
+      }
+    });
+  } catch {
+    return;
+  }
+
+  if (cfg.referredBonusKobo > 0) {
+    await createNotification({
+      userId: user.id,
+      type: "referral.bonus",
+      title: "Referral bonus credited",
+      body: `₦${(cfg.referredBonusKobo / 100).toFixed(2)} credited to your wallet.`,
+      link: "/wallet",
+    });
+  }
+  if (cfg.referrerBonusKobo > 0) {
+    await createNotification({
+      userId: user.referredById,
+      type: "referral.bonus",
+      title: "Referral bonus credited",
+      body: `₦${(cfg.referrerBonusKobo / 100).toFixed(2)} credited to your wallet.`,
+      link: "/wallet",
+    });
+  }
+}
+
 export const paystackWebhookHandler: RequestHandler = async (req, res) => {
   try {
     const sig = req.header("x-paystack-signature");
@@ -102,6 +212,7 @@ export const paystackWebhookHandler: RequestHandler = async (req, res) => {
             body: `₦${(amountKobo / 100).toFixed(2)} credited to your wallet.`,
             link: "/wallet",
           });
+          await applyPromoAndReferralBonus({ userId: t.userId, depositTxId: t.id });
         }
       }
     }

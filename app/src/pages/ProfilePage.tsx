@@ -15,6 +15,22 @@ export function ProfilePage() {
             <span className="badge bg-secondary">Consumer</span>
           </div>
           <hr />
+          <div className="text-muted small">Referral code</div>
+          <div className="d-flex gap-2 align-items-center mt-1">
+            <div className="font-monospace fw-semibold">{me?.referralCode ?? '—'}</div>
+            <button
+              className="btn btn-sm btn-outline-light"
+              type="button"
+              disabled={!me?.referralCode}
+              onClick={() => {
+                if (!me?.referralCode) return
+                void navigator.clipboard.writeText(me.referralCode)
+              }}
+            >
+              Copy
+            </button>
+          </div>
+          <hr />
           <div className="d-flex justify-content-between">
             <span className="text-muted">2FA</span>
             <span className={`badge ${me?.mfaEnabled ? 'bg-success' : 'bg-secondary'}`}>{me?.mfaEnabled ? 'Enabled' : 'Off'}</span>

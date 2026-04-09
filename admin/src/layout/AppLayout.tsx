@@ -65,6 +65,11 @@ export function AppLayout() {
                 </NavLink>
               </li>
               <li className="nav-item">
+                <NavLink className="nav-link" to="/promo-codes">
+                  Promo Codes
+                </NavLink>
+              </li>
+              <li className="nav-item">
                 <NavLink className="nav-link" to="/settings">
                   Settings
                 </NavLink>

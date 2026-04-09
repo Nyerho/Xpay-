@@ -5,7 +5,7 @@ export type AuthContextValue = {
   status: AuthStatus
   token: string | null
   me: ConsumerMe | null
-  signup: (email: string, password: string, phone?: string) => Promise<void>
+  signup: (email: string, password: string, phone?: string, referralCode?: string, promoCode?: string) => Promise<void>
   login: (email: string, password: string) => Promise<void>
   logout: () => void
 }

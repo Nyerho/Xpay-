@@ -9,6 +9,8 @@ export function LoginPage() {
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
+  const [referralCode, setReferralCode] = useState('')
+  const [promoCode, setPromoCode] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -53,7 +55,13 @@ export function LoginPage() {
               const run =
                 mode === 'login'
                   ? login(email.trim(), password)
-                  : signup(email.trim(), password, phone.trim() ? phone.trim() : undefined)
+                  : signup(
+                      email.trim(),
+                      password,
+                      phone.trim() ? phone.trim() : undefined,
+                      referralCode.trim() ? referralCode.trim() : undefined,
+                      promoCode.trim() ? promoCode.trim() : undefined,
+                    )
               run
                 .then(() => navigate('/'))
                 .catch((err: unknown) => {
@@ -112,6 +120,19 @@ export function LoginPage() {
                 required
               />
             </div>
+
+            {mode === 'signup' ? (
+              <div className="row g-2 mb-3">
+                <div className="col-12 col-md-6">
+                  <label className="form-label">Referral code (optional)</label>
+                  <input className="form-control" value={referralCode} onChange={(e) => setReferralCode(e.target.value)} />
+                </div>
+                <div className="col-12 col-md-6">
+                  <label className="form-label">Promo code (optional)</label>
+                  <input className="form-control" value={promoCode} onChange={(e) => setPromoCode(e.target.value)} />
+                </div>
+              </div>
+            ) : null}
 
             <button className="btn btn-primary w-100" disabled={busy}>
               {busy ? 'Please wait…' : mode === 'login' ? 'Login' : 'Create account'}
