@@ -555,6 +555,10 @@ consumerRouter.post("/trade/buy", requireAuth, async (req: AuthenticatedRequest,
     res.status(400).json({ error: "invalid_body" });
     return;
   }
+  if (parsed.data.usdCents < 100) {
+    res.status(400).json({ error: "min_usd_1" });
+    return;
+  }
 
   const idem = getIdempotencyKey(req);
   if (idem) {

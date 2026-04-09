@@ -28,7 +28,7 @@ export function BuyCryptoPage() {
     const whole = Number(m[1] ?? '0')
     const frac = String(m[2] ?? '').padEnd(2, '0')
     const cents = whole * 100 + Number(frac || '0')
-    return Number.isFinite(cents) && cents > 0 ? cents : null
+    return Number.isFinite(cents) && cents >= 100 ? cents : null
   }, [usd])
 
   const buyPrice = quotes?.[coin]?.buyPriceUsdCents ?? null
@@ -58,6 +58,7 @@ export function BuyCryptoPage() {
           <div className="mb-3">
             <label className="form-label">Spend (USD)</label>
             <input className="form-control" value={usd} onChange={(e) => setUsd(e.target.value)} inputMode="decimal" />
+            <div className="text-muted small mt-1">Minimum: $1.00</div>
           </div>
 
           {loading ? <div className="text-muted small">Loading quotes…</div> : null}
@@ -93,7 +94,7 @@ export function BuyCryptoPage() {
                 })
                 .catch((e: unknown) => {
                   const msg = e && typeof e === 'object' && 'error' in e ? String((e as { error: string }).error) : 'buy_failed'
-                  setError(msg)
+                  setError(msg === 'min_usd_1' ? 'Minimum buy is $1.00' : msg)
                 })
                 .finally(() => setBusy(false))
             }}

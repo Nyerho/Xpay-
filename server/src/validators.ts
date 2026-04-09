@@ -120,7 +120,7 @@ export const consumerPaystackResolveSchema = z.object({
 
 export const consumerCryptoBuySchema = z.object({
   asset: z.enum(["USDT", "BTC", "ETH"]),
-  usdCents: z.number().int().min(100),
+  usdCents: z.number().int().min(1),
   quoteUpdatedAt: z.string().min(10).max(64).optional(),
 });
 
