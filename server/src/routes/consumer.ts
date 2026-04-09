@@ -170,6 +170,14 @@ function safeJsonParse(s: string) {
   }
 }
 
+function toDbErrorCode(err: unknown) {
+  if (!err || typeof err !== "object") return null;
+  const anyErr = err as Record<string, unknown>;
+  const code = typeof anyErr.code === "string" ? anyErr.code : null;
+  const errorCode = typeof anyErr.errorCode === "string" ? anyErr.errorCode : null;
+  return code ?? errorCode;
+}
+
 consumerRouter.post("/auth/signup", async (req, res) => {
   const parsed = signupSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -292,43 +300,57 @@ consumerRouter.get("/balance", requireAuth, async (req: AuthenticatedRequest, re
 });
 
 consumerRouter.get("/deposit-addresses", requireAuth, async (req: AuthenticatedRequest, res) => {
-  const user = await prisma.user.findUnique({ where: { id: req.auth!.userId } });
-  if (!user || user.role !== "CONSUMER") {
-    res.status(401).json({ error: "unauthorized" });
-    return;
-  }
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.auth!.userId } });
+    if (!user || user.role !== "CONSUMER") {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
 
-  if (!isCircleEnabled()) {
-    res.status(501).json({ error: "circle_not_configured" });
-    return;
-  }
+    if (!isCircleEnabled()) {
+      res.status(501).json({ error: "circle_not_configured" });
+      return;
+    }
 
-  const blockchains = getCircleBlockchains();
-  const existing = await prisma.externalWallet.findMany({
-    where: { userId: user.id, provider: "circle", blockchain: { in: blockchains } },
-  });
-
-  const missing = blockchains.filter((b) => !existing.some((e) => e.blockchain === b));
-  for (const blockchain of missing) {
-    const created = await circleCreateUserWallets({ blockchains: [blockchain] });
-    const w = created[0];
-    await prisma.externalWallet.upsert({
-      where: { userId_provider_blockchain: { userId: user.id, provider: "circle", blockchain } },
-      create: { userId: user.id, provider: "circle", walletId: w.walletId, blockchain: w.blockchain, address: w.address },
-      update: { walletId: w.walletId, address: w.address },
+    const blockchains = getCircleBlockchains();
+    const existing = await prisma.externalWallet.findMany({
+      where: { userId: user.id, provider: "circle", blockchain: { in: blockchains } },
     });
+
+    const missing = blockchains.filter((b) => !existing.some((e) => e.blockchain === b));
+    for (const blockchain of missing) {
+      const created = await circleCreateUserWallets({ blockchains: [blockchain] });
+      const w = created[0];
+      await prisma.externalWallet.upsert({
+        where: { userId_provider_blockchain: { userId: user.id, provider: "circle", blockchain } },
+        create: { userId: user.id, provider: "circle", walletId: w.walletId, blockchain: w.blockchain, address: w.address },
+        update: { walletId: w.walletId, address: w.address },
+      });
+    }
+
+    const all = await prisma.externalWallet.findMany({
+      where: { userId: user.id, provider: "circle", blockchain: { in: blockchains } },
+      orderBy: { blockchain: "asc" },
+    });
+
+    res.json({
+      provider: "circle",
+      asset: "USDC",
+      addresses: all.map((w) => ({ blockchain: w.blockchain, address: w.address })),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg === "circle_not_configured") {
+      res.status(501).json({ error: "circle_not_configured" });
+      return;
+    }
+    if (msg === "circle_wallet_create_failed") {
+      res.status(502).json({ error: "circle_wallet_create_failed" });
+      return;
+    }
+    process.stderr.write((err instanceof Error ? err.stack ?? err.message : String(err)) + "\n");
+    res.status(503).json({ error: "db_unavailable", code: toDbErrorCode(err) });
   }
-
-  const all = await prisma.externalWallet.findMany({
-    where: { userId: user.id, provider: "circle", blockchain: { in: blockchains } },
-    orderBy: { blockchain: "asc" },
-  });
-
-  res.json({
-    provider: "circle",
-    asset: "USDC",
-    addresses: all.map((w) => ({ blockchain: w.blockchain, address: w.address })),
-  });
 });
 
 consumerRouter.get("/kyc", requireAuth, async (req: AuthenticatedRequest, res) => {
@@ -345,52 +367,62 @@ consumerRouter.get("/kyc", requireAuth, async (req: AuthenticatedRequest, res) =
 });
 
 consumerRouter.get("/transactions", requireAuth, async (req: AuthenticatedRequest, res) => {
-  const user = await prisma.user.findUnique({ where: { id: req.auth!.userId } });
-  if (!user || user.role !== "CONSUMER") {
-    res.status(401).json({ error: "unauthorized" });
-    return;
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.auth!.userId } });
+    if (!user || user.role !== "CONSUMER") {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
+    const items = await prisma.transaction.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    });
+    res.json(
+      items.map((t) => ({
+        id: t.id,
+        type: t.type,
+        status: t.status,
+        asset: t.asset,
+        amountUsdCents: t.amountUsdCents,
+        createdAt: t.createdAt,
+      })),
+    );
+  } catch (err) {
+    process.stderr.write((err instanceof Error ? err.stack ?? err.message : String(err)) + "\n");
+    res.status(503).json({ error: "db_unavailable", code: toDbErrorCode(err) });
   }
-  const items = await prisma.transaction.findMany({
-    where: { userId: user.id },
-    orderBy: { createdAt: "desc" },
-    take: 200,
-  });
-  res.json(
-    items.map((t) => ({
+});
+
+consumerRouter.get("/transactions/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.auth!.userId } });
+    if (!user || user.role !== "CONSUMER") {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
+    const id = param(req.params.id);
+    const t = await prisma.transaction.findUnique({ where: { id } });
+    if (!t || t.userId !== user.id) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    res.json({
       id: t.id,
       type: t.type,
       status: t.status,
       asset: t.asset,
       amountUsdCents: t.amountUsdCents,
+      amountAssetMinor: t.amountAssetMinor,
+      metadataJson: t.metadataJson,
+      externalRef: t.externalRef,
       createdAt: t.createdAt,
-    })),
-  );
-});
-
-consumerRouter.get("/transactions/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
-  const user = await prisma.user.findUnique({ where: { id: req.auth!.userId } });
-  if (!user || user.role !== "CONSUMER") {
-    res.status(401).json({ error: "unauthorized" });
-    return;
+      updatedAt: t.updatedAt,
+    });
+  } catch (err) {
+    process.stderr.write((err instanceof Error ? err.stack ?? err.message : String(err)) + "\n");
+    res.status(503).json({ error: "db_unavailable", code: toDbErrorCode(err) });
   }
-  const id = param(req.params.id);
-  const t = await prisma.transaction.findUnique({ where: { id } });
-  if (!t || t.userId !== user.id) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
-  res.json({
-    id: t.id,
-    type: t.type,
-    status: t.status,
-    asset: t.asset,
-    amountUsdCents: t.amountUsdCents,
-    amountAssetMinor: t.amountAssetMinor,
-    metadataJson: t.metadataJson,
-    externalRef: t.externalRef,
-    createdAt: t.createdAt,
-    updatedAt: t.updatedAt,
-  });
 });
 
 consumerRouter.post("/trade/buy", requireAuth, async (req: AuthenticatedRequest, res) => {
