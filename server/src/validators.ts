@@ -111,3 +111,8 @@ export const consumerGiftCardSubmitSchema = z.object({
   frontImageUrl: z.string().min(10).max(2000),
   backImageUrl: z.string().min(10).max(2000).optional(),
 });
+
+export const consumerGiftCardBuySchema = z.object({
+  brand: z.string().min(2).max(64),
+  valueUsdCents: z.number().int().min(100),
+});

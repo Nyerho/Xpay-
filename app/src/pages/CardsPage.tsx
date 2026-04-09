@@ -19,6 +19,20 @@ type Submission = {
   createdAt: string
 }
 
+type InventoryRow = {
+  brand: string
+  valueUsdCents: number
+  availableCount: number
+}
+
+type Purchase = {
+  id: string
+  brand: string
+  valueUsdCents: number
+  code: string
+  purchasedAt: string | null
+}
+
 export function CardsPage() {
   const { token } = useAuth()
   const [tab, setTab] = useState<'sell' | 'buy'>('sell')
@@ -31,6 +45,10 @@ export function CardsPage() {
   const [back, setBack] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
   const [subs, setSubs] = useState<Submission[]>([])
+  const [inv, setInv] = useState<InventoryRow[]>([])
+  const [purchases, setPurchases] = useState<Purchase[]>([])
+  const [buyBusy, setBuyBusy] = useState(false)
+  const [lastCode, setLastCode] = useState<string | null>(null)
 
   useEffect(() => {
     setLoading(true)
@@ -52,6 +70,21 @@ export function CardsPage() {
     apiFetch<Submission[]>('/api/consumer/gift-cards', { token })
       .then(setSubs)
       .catch(() => setSubs([]))
+  }, [token])
+
+  useEffect(() => {
+    if (!token) return
+    const key = brand.toUpperCase().replaceAll(' ', '_')
+    apiFetch<InventoryRow[]>(`/api/consumer/gift-cards/inventory?brand=${encodeURIComponent(key)}`, { token })
+      .then(setInv)
+      .catch(() => setInv([]))
+  }, [brand, token])
+
+  useEffect(() => {
+    if (!token) return
+    apiFetch<Purchase[]>('/api/consumer/gift-cards/purchases', { token })
+      .then(setPurchases)
+      .catch(() => setPurchases([]))
   }, [token])
 
   const sellOffer = useMemo(() => {
@@ -80,6 +113,13 @@ export function CardsPage() {
     if (!rate) return null
     return v * rate.sellPct
   }, [brand, rates, value])
+
+  const availableCount = useMemo(() => {
+    if (!valueUsdCents) return 0
+    const key = brand.toUpperCase().replaceAll(' ', '_')
+    const row = inv.find((r) => r.brand === key && r.valueUsdCents === valueUsdCents)
+    return row?.availableCount ?? 0
+  }, [brand, inv, valueUsdCents])
 
   return (
     <div className="container xpay-fade-in">
@@ -202,11 +242,85 @@ export function CardsPage() {
                 <span className="fw-bold">
                   {loading ? '—' : buyPrice === null ? '—' : `$${buyPrice.toFixed(2)}`}
                 </span>
-                <div className="text-muted small mt-1">Rates come from server settings. Purchase requires inventory + fulfillment.</div>
+                <div className="text-muted small mt-1">
+                  Available: <span className="fw-semibold">{availableCount}</span>
+                </div>
               </div>
-              <button className="btn btn-primary w-100" disabled>
-                Buy Now
+              {lastCode ? (
+                <div className="alert alert-secondary">
+                  <div className="fw-semibold">Your code</div>
+                  <div className="d-flex gap-2 align-items-center mt-2">
+                    <div className="font-monospace">{lastCode}</div>
+                    <button
+                      className="btn btn-sm btn-outline-light"
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard.writeText(lastCode)
+                      }}
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              <button
+                className="btn btn-primary w-100"
+                disabled={!token || buyBusy || !valueUsdCents || buyPrice === null || availableCount <= 0}
+                onClick={async () => {
+                  if (!token || !valueUsdCents) return
+                  setBuyBusy(true)
+                  setError(null)
+                  setLastCode(null)
+                  try {
+                    const r = await apiFetch<{ ok: true; code: string }>('/api/consumer/gift-cards/buy', {
+                      method: 'POST',
+                      token,
+                      body: { brand, valueUsdCents },
+                    })
+                    setLastCode(r.code)
+                    const nextInv = await apiFetch<InventoryRow[]>(`/api/consumer/gift-cards/inventory?brand=${encodeURIComponent(brand.toUpperCase().replaceAll(' ', '_'))}`, {
+                      token,
+                    })
+                    setInv(nextInv)
+                    const nextPurchases = await apiFetch<Purchase[]>('/api/consumer/gift-cards/purchases', { token })
+                    setPurchases(nextPurchases)
+                  } catch (e: unknown) {
+                    const msg = e && typeof e === 'object' && 'error' in e ? String((e as { error: string }).error) : 'buy_failed'
+                    setError(msg)
+                  } finally {
+                    setBuyBusy(false)
+                  }
+                }}
+              >
+                {buyBusy ? 'Buying…' : 'Buy Now'}
               </button>
+
+              <div className="mt-3">
+                <div className="fw-semibold mb-2">My purchases</div>
+                <div className="list-group list-group-flush">
+                  {purchases.length === 0 ? <div className="list-group-item text-muted">No purchases yet</div> : null}
+                  {purchases.map((p) => (
+                    <div key={p.id} className="list-group-item">
+                      <div className="d-flex justify-content-between align-items-center">
+                        <div>
+                          <div className="fw-semibold">{p.brand}</div>
+                          <div className="text-muted small">${(p.valueUsdCents / 100).toFixed(2)}</div>
+                        </div>
+                        <button
+                          className="btn btn-sm btn-outline-light"
+                          type="button"
+                          onClick={() => {
+                            void navigator.clipboard.writeText(p.code)
+                          }}
+                        >
+                          Copy code
+                        </button>
+                      </div>
+                      <div className="font-monospace small mt-2">{p.code}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
         </div>

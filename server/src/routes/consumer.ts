@@ -7,6 +7,7 @@ import {
   consumerCryptoSellSchema,
   consumerConvertSchema,
   consumerGiftCardSubmitSchema,
+  consumerGiftCardBuySchema,
   consumerSwapRequestSchema,
   consumerUsdcWithdrawalSchema,
   consumerWithdrawalRequestSchema,
@@ -945,6 +946,45 @@ consumerRouter.get("/gift-cards", requireAuth, async (req: AuthenticatedRequest,
   );
 });
 
+consumerRouter.get("/gift-cards/inventory", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.auth!.userId } });
+  if (!user || user.role !== "CONSUMER") {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+  const brand = typeof req.query.brand === "string" ? req.query.brand : null;
+  const brandKey = brand ? brand.trim().toUpperCase().replaceAll(" ", "_") : null;
+  const rows = await prisma.inventoryItem.groupBy({
+    by: ["brand", "valueUsdCents"],
+    where: { status: "AVAILABLE", ...(brandKey ? { brand: brandKey } : {}) },
+    _count: { _all: true },
+    orderBy: [{ brand: "asc" }, { valueUsdCents: "asc" }],
+  });
+  res.json(rows.map((r) => ({ brand: r.brand, valueUsdCents: r.valueUsdCents, availableCount: r._count._all })));
+});
+
+consumerRouter.get("/gift-cards/purchases", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.auth!.userId } });
+  if (!user || user.role !== "CONSUMER") {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+  const items = await prisma.inventoryItem.findMany({
+    where: { purchasedById: user.id, status: "SOLD" },
+    orderBy: { purchasedAt: "desc" },
+    take: 200,
+  });
+  res.json(
+    items.map((i) => ({
+      id: i.id,
+      brand: i.brand,
+      valueUsdCents: i.valueUsdCents,
+      code: i.code,
+      purchasedAt: i.purchasedAt,
+    })),
+  );
+});
+
 consumerRouter.post("/gift-cards", requireAuth, async (req: AuthenticatedRequest, res) => {
   const parsed = consumerGiftCardSubmitSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -1024,6 +1064,117 @@ consumerRouter.post("/gift-cards", requireAuth, async (req: AuthenticatedRequest
   });
 
   res.status(201).json({ id: submission.id, offerUsdtCents, status: submission.status });
+});
+
+consumerRouter.post("/gift-cards/buy", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const parsed = consumerGiftCardBuySchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "invalid_body" });
+    return;
+  }
+
+  const user = await prisma.user.findUnique({ where: { id: req.auth!.userId }, include: { balance: true } });
+  if (!user || user.role !== "CONSUMER") {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+  if (user.isFrozen) {
+    res.status(403).json({ error: "user_frozen" });
+    return;
+  }
+
+  const ratesSetting = await prisma.setting.findUnique({ where: { key: "giftCardRates" } });
+  if (!ratesSetting) {
+    res.status(503).json({ error: "rates_unavailable" });
+    return;
+  }
+  const rates = safeJsonParse(ratesSetting.valueJson);
+
+  const brandKey = parsed.data.brand.trim().toUpperCase().replaceAll(" ", "_");
+  const rateAny = rates[brandKey];
+  const sellPct =
+    rateAny && typeof rateAny === "object" && !Array.isArray(rateAny) && typeof (rateAny as Record<string, unknown>).sellPct === "number"
+      ? ((rateAny as Record<string, unknown>).sellPct as number)
+      : null;
+  if (!sellPct || !Number.isFinite(sellPct) || sellPct <= 0 || sellPct > 5) {
+    res.status(400).json({ error: "unsupported_brand" });
+    return;
+  }
+
+  const valueUsdCents = parsed.data.valueUsdCents;
+  const priceUsdCents = Math.floor((valueUsdCents / 100) * sellPct * 100);
+  if (!Number.isFinite(priceUsdCents) || priceUsdCents <= 0) {
+    res.status(400).json({ error: "invalid_value" });
+    return;
+  }
+
+  const b = user.balance ?? (await prisma.balance.create({ data: { userId: user.id } }));
+  if (b.usdCents < priceUsdCents) {
+    res.status(409).json({ error: "insufficient_funds" });
+    return;
+  }
+
+  const now = new Date();
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const result = await prisma.$transaction(async (p) => {
+        const item = await p.inventoryItem.findFirst({
+          where: { status: "AVAILABLE", brand: brandKey, valueUsdCents },
+          orderBy: { createdAt: "asc" },
+        });
+        if (!item) {
+          return { ok: false as const, error: "sold_out" as const };
+        }
+
+        const updated = await p.inventoryItem.updateMany({
+          where: { id: item.id, status: "AVAILABLE" },
+          data: { status: "SOLD", purchasedById: user.id, purchasedAt: now },
+        });
+        if (updated.count !== 1) {
+          throw new Error("race");
+        }
+
+        await p.balance.update({ where: { userId: b.userId }, data: { usdCents: { decrement: priceUsdCents } } });
+
+        await p.transaction.create({
+          data: {
+            userId: user.id,
+            type: "GIFT_CARD_BUY",
+            status: "COMPLETE",
+            asset: brandKey,
+            amountUsdCents: priceUsdCents,
+            externalRef: `inventory:${item.id}`,
+            metadataJson: JSON.stringify({ inventoryItemId: item.id, valueUsdCents, priceUsdCents, sellPct }),
+          },
+        });
+
+        return { ok: true as const, itemId: item.id, code: item.code };
+      });
+
+      if (!result.ok) {
+        res.status(409).json({ error: result.error });
+        return;
+      }
+
+      await writeAuditLog({
+        req,
+        actorId: user.id,
+        action: "consumer.giftCard.buy",
+        entity: "InventoryItem",
+        entityId: result.itemId,
+        after: { brand: brandKey, valueUsdCents, priceUsdCents },
+      });
+
+      res.json({ ok: true, itemId: result.itemId, code: result.code, priceUsdCents });
+      return;
+    } catch (err) {
+      if (attempt === 2) {
+        process.stderr.write((err instanceof Error ? err.stack ?? err.message : String(err)) + "\n");
+        res.status(500).json({ error: "buy_failed" });
+        return;
+      }
+    }
+  }
 });
 
 consumerRouter.post("/swap", requireAuth, async (req: AuthenticatedRequest, res) => {
