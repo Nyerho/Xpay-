@@ -5,6 +5,7 @@ import { adminRouter } from "./routes/admin";
 import { consumerRouter } from "./routes/consumer";
 import { publicRouter } from "./routes/public";
 import { circleWebhookHandler } from "./routes/circleWebhook";
+import { paystackWebhookHandler } from "./routes/paystackWebhook";
 
 export function createApp() {
   const app = express();
@@ -13,6 +14,7 @@ export function createApp() {
   app.get("/api/public/circle/webhook", (_req, res) => res.status(200).send("ok"));
   app.head("/api/public/circle/webhook", (_req, res) => res.sendStatus(200));
   app.post("/api/public/circle/webhook", express.raw({ type: "application/json" }), circleWebhookHandler);
+  app.post("/api/public/paystack/webhook", express.raw({ type: "application/json" }), paystackWebhookHandler);
   app.use(express.json({ limit: "2mb" }));
 
   app.get("/health", (_req, res) => res.json({ ok: true }));

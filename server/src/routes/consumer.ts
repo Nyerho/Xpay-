@@ -5,6 +5,7 @@ import { requireAuth, signAccessToken, verifyPassword, type AuthenticatedRequest
 import {
   consumerDepositRequestSchema,
   consumerNgnDepositSchema,
+  consumerNgnPaystackInitSchema,
   consumerCryptoBuySchema,
   consumerCryptoSellSchema,
   consumerConvertSchema,
@@ -20,6 +21,7 @@ import {
 import { writeAuditLog } from "../audit";
 import { circleCreateUserWallets, getCircleBlockchains, isCircleEnabled } from "../circle";
 import { sendEmail } from "../notify";
+import { paystackInitializeTransaction } from "../paystack";
 
 export const consumerRouter = Router();
 
@@ -1394,6 +1396,84 @@ consumerRouter.post("/deposits/ngn", requireAuth, async (req: AuthenticatedReque
   });
 
   res.status(201).json({ id: tx.id, status: tx.status, reference });
+});
+
+consumerRouter.post("/deposits/ngn/paystack/initialize", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const parsed = consumerNgnPaystackInitSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "invalid_body" });
+    return;
+  }
+
+  const user = await prisma.user.findUnique({ where: { id: req.auth!.userId } });
+  if (!user || user.role !== "CONSUMER") {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+  if (user.isFrozen) {
+    res.status(403).json({ error: "user_frozen" });
+    return;
+  }
+
+  const amount = parsed.data.amount.trim();
+  if (!/^\d+(\.\d+)?$/.test(amount)) {
+    res.status(400).json({ error: "invalid_amount" });
+    return;
+  }
+  const koboBig = parseDecimalToBigInt(amount, 2);
+  const kobo = koboBig ? Number(koboBig) : 0;
+  if (!Number.isFinite(kobo) || kobo <= 0) {
+    res.status(400).json({ error: "invalid_amount" });
+    return;
+  }
+  if (kobo > 50_000_000_00) {
+    res.status(400).json({ error: "amount_too_large" });
+    return;
+  }
+
+  const reference = `XPAY-PS-${crypto.randomBytes(6).toString("hex").toUpperCase()}`;
+  const callbackUrl = process.env.PAYSTACK_CALLBACK_URL ?? null;
+
+  let init: { authorizationUrl: string; reference: string };
+  try {
+    init = await paystackInitializeTransaction({
+      email: user.email,
+      amountKobo: kobo,
+      reference,
+      callbackUrl,
+      metadata: { userId: user.id },
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg === "paystack_not_configured") {
+      res.status(501).json({ error: "paystack_not_configured" });
+      return;
+    }
+    res.status(502).json({ error: "paystack_init_failed" });
+    return;
+  }
+
+  const tx = await prisma.transaction.create({
+    data: {
+      userId: user.id,
+      type: "DEPOSIT",
+      status: "PENDING",
+      asset: "NGN:PAYSTACK",
+      externalRef: `paystack:${init.reference}`,
+      metadataJson: JSON.stringify({ provider: "paystack", asset: "NGN", rail: "PAYSTACK", amount, amountKobo: kobo, reference: init.reference }),
+    },
+  });
+
+  await writeAuditLog({
+    req,
+    actorId: user.id,
+    action: "consumer.deposit.ngn.paystack.initialize",
+    entity: "Transaction",
+    entityId: tx.id,
+    after: { amount, reference: init.reference },
+  });
+
+  res.json({ authorizationUrl: init.authorizationUrl, reference: init.reference });
 });
 
 consumerRouter.post("/withdrawals", requireAuth, async (req: AuthenticatedRequest, res) => {

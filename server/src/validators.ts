@@ -76,6 +76,10 @@ export const consumerNgnDepositSchema = z.object({
   amount: z.string().min(1).max(64),
 });
 
+export const consumerNgnPaystackInitSchema = z.object({
+  amount: z.string().min(1).max(64),
+});
+
 export const consumerWithdrawalRequestSchema = z.object({
   asset: z.enum(["USDT", "BTC", "ETH"]),
   rail: z.enum(["BTC", "ETH", "TRC20", "ERC20"]),

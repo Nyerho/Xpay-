@@ -55,6 +55,7 @@ export function DepositPage() {
   const [ngnBusy, setNgnBusy] = useState(false)
   const [ngnAmount, setNgnAmount] = useState('')
   const [ngnRef, setNgnRef] = useState<string | null>(null)
+  const [ngnAuthUrl, setNgnAuthUrl] = useState<string | null>(null)
 
   useEffect(() => {
     setLoading(true)
@@ -381,13 +382,16 @@ export function DepositPage() {
                 setNgnBusy(true)
                 setError(null)
                 setNgnRef(null)
-                apiFetch<{ id: string; status: string; reference: string }>('/api/consumer/deposits/ngn', {
+                setNgnAuthUrl(null)
+                apiFetch<{ authorizationUrl: string; reference: string }>('/api/consumer/deposits/ngn/paystack/initialize', {
                   method: 'POST',
                   token,
                   body: { amount: ngnAmount.trim() },
                 })
                   .then((r) => {
                     setNgnRef(r.reference)
+                    setNgnAuthUrl(r.authorizationUrl)
+                    window.location.href = r.authorizationUrl
                   })
                   .catch((e: unknown) => {
                     const msg = e && typeof e === 'object' && 'error' in e ? String((e as { error: string }).error) : 'deposit_failed'
@@ -396,12 +400,18 @@ export function DepositPage() {
                   .finally(() => setNgnBusy(false))
               }}
             >
-              {ngnBusy ? 'Creating…' : 'Create reference'}
+              {ngnBusy ? 'Redirecting…' : 'Pay with Paystack'}
             </button>
 
             <div className="text-muted small mt-2">
-              Make the bank transfer and include the reference exactly. Your deposit will be credited after review.
+              After payment, your NGN wallet will be credited automatically once confirmed.
             </div>
+
+            {ngnAuthUrl ? (
+              <button className="btn btn-outline-light w-100 mt-2" type="button" onClick={() => window.location.assign(ngnAuthUrl)}>
+                Open Paystack Checkout
+              </button>
+            ) : null}
 
             <button className="btn btn-outline-light w-100 mt-3" type="button" onClick={() => navigate('/activity')}>
               View activity
