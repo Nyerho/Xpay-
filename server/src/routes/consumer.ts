@@ -17,6 +17,10 @@ import { circleCreateUserWallets, getCircleBlockchains, isCircleEnabled } from "
 
 export const consumerRouter = Router();
 
+function param(value: unknown) {
+  return Array.isArray(value) ? String(value[0]) : String(value);
+}
+
 function parseDecimalToBigInt(amount: string, decimals: number) {
   const m = amount.trim().match(/^(\d+)(?:\.(\d+))?$/);
   if (!m) return null;
@@ -29,6 +33,17 @@ function parseDecimalToBigInt(amount: string, decimals: number) {
   } catch {
     return null;
   }
+}
+
+function formatMinorToDecimalString(minor: bigint, decimals: number) {
+  const neg = minor < 0n;
+  const v = neg ? -minor : minor;
+  const s = v.toString().padStart(decimals + 1, "0");
+  const whole = s.slice(0, s.length - decimals);
+  const frac = s.slice(s.length - decimals);
+  const trimmedFrac = frac.replace(/0+$/, "");
+  const out = trimmedFrac.length ? `${whole}.${trimmedFrac}` : whole;
+  return neg ? `-${out}` : out;
 }
 
 function calcPriceCents(midUsd: number, bps: number, side: "buy" | "sell") {
@@ -297,6 +312,32 @@ consumerRouter.get("/transactions", requireAuth, async (req: AuthenticatedReques
   );
 });
 
+consumerRouter.get("/transactions/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.auth!.userId } });
+  if (!user || user.role !== "CONSUMER") {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+  const id = param(req.params.id);
+  const t = await prisma.transaction.findUnique({ where: { id } });
+  if (!t || t.userId !== user.id) {
+    res.status(404).json({ error: "not_found" });
+    return;
+  }
+  res.json({
+    id: t.id,
+    type: t.type,
+    status: t.status,
+    asset: t.asset,
+    amountUsdCents: t.amountUsdCents,
+    amountAssetMinor: t.amountAssetMinor,
+    metadataJson: t.metadataJson,
+    externalRef: t.externalRef,
+    createdAt: t.createdAt,
+    updatedAt: t.updatedAt,
+  });
+});
+
 consumerRouter.post("/trade/buy", requireAuth, async (req: AuthenticatedRequest, res) => {
   const parsed = consumerCryptoBuySchema.safeParse(req.body);
   if (!parsed.success) {
@@ -391,7 +432,14 @@ consumerRouter.post("/trade/buy", requireAuth, async (req: AuthenticatedRequest,
         asset,
         amountUsdCents: usdCents,
         amountAssetMinor: asset === "ETH" ? null : Number(assetMinor),
-        metadataJson: JSON.stringify({ side: "buy", priceUsdCents: priceCents, decimals, quoteUpdatedAt: quotes.updatedAt }),
+        metadataJson: JSON.stringify({
+          side: "buy",
+          priceUsdCents: priceCents,
+          decimals,
+          assetMinor: assetMinor.toString(),
+          assetAmount: formatMinorToDecimalString(assetMinor, decimals),
+          quoteUpdatedAt: quotes.updatedAt,
+        }),
       },
     });
   });
@@ -514,7 +562,14 @@ consumerRouter.post("/trade/sell", requireAuth, async (req: AuthenticatedRequest
         asset,
         amountUsdCents: usdCents,
         amountAssetMinor: asset === "ETH" ? null : Number(assetMinor),
-        metadataJson: JSON.stringify({ side: "sell", priceUsdCents: priceCents, decimals, quoteUpdatedAt: quotes.updatedAt }),
+        metadataJson: JSON.stringify({
+          side: "sell",
+          priceUsdCents: priceCents,
+          decimals,
+          assetMinor: assetMinor.toString(),
+          assetAmount: amount,
+          quoteUpdatedAt: quotes.updatedAt,
+        }),
       },
     });
   });
@@ -645,6 +700,8 @@ consumerRouter.post("/convert", requireAuth, async (req: AuthenticatedRequest, r
     res.status(400).json({ error: "amount_too_small" });
     return;
   }
+  const toDecimals = to === "BTC" ? 8 : to === "ETH" ? 18 : 2;
+  const toAmount = formatMinorToDecimalString(toMinor, toDecimals);
 
   if (from === "USD" && b.usdCents < Number(fromMinor)) {
     res.status(409).json({ error: "insufficient_funds" });
@@ -697,6 +754,9 @@ consumerRouter.post("/convert", requireAuth, async (req: AuthenticatedRequest, r
           from,
           to,
           fromAmount: amount,
+          toAmount,
+          fromMinor: fromMinor.toString(),
+          toMinor: toMinor.toString(),
           usdCentsValue: usdCentsValue.toString(),
           quotesUpdatedAt: quotes?.updatedAt ?? null,
           fxUpdatedAt: fx?.updatedAt ?? null,
