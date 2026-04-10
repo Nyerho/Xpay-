@@ -1293,10 +1293,12 @@ consumerRouter.post("/gift-cards/buy", requireAuth, async (req: AuthenticatedReq
   }
 
   const b = user.balance ?? (await prisma.balance.create({ data: { userId: user.id } }));
-  if (b.usdCents < priceUsdCents) {
+  if (b.usdCents + b.usdtCents < priceUsdCents) {
     res.status(409).json({ error: "insufficient_funds" });
     return;
   }
+  const usdDebit = Math.min(b.usdCents, priceUsdCents);
+  const usdtDebit = priceUsdCents - usdDebit;
 
   const now = new Date();
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -1318,7 +1320,10 @@ consumerRouter.post("/gift-cards/buy", requireAuth, async (req: AuthenticatedReq
           throw new Error("race");
         }
 
-        await p.balance.update({ where: { userId: b.userId }, data: { usdCents: { decrement: priceUsdCents } } });
+        const debitData: Record<string, unknown> = {};
+        if (usdDebit > 0) debitData.usdCents = { decrement: usdDebit };
+        if (usdtDebit > 0) debitData.usdtCents = { decrement: usdtDebit };
+        await p.balance.update({ where: { userId: b.userId }, data: debitData as any });
 
         await p.transaction.create({
           data: {
@@ -1328,7 +1333,14 @@ consumerRouter.post("/gift-cards/buy", requireAuth, async (req: AuthenticatedReq
             asset: brandKey,
             amountUsdCents: priceUsdCents,
             externalRef: `inventory:${item.id}`,
-            metadataJson: JSON.stringify({ inventoryItemId: item.id, valueUsdCents, priceUsdCents, sellPct }),
+            metadataJson: JSON.stringify({
+              inventoryItemId: item.id,
+              valueUsdCents,
+              priceUsdCents,
+              sellPct,
+              paidUsdCents: usdDebit,
+              paidUsdtCents: usdtDebit,
+            }),
           },
         });
 

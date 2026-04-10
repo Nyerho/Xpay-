@@ -4,11 +4,20 @@ import { AuthContext, type AuthContextValue } from './context'
 import type { AuthStatus, ConsumerMe } from './types'
 
 const tokenKey = 'xpay_consumer_token'
+const meKey = 'xpay_consumer_me'
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [status, setStatus] = useState<AuthStatus>('loading')
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(tokenKey))
-  const [me, setMe] = useState<ConsumerMe | null>(null)
+  const [me, setMe] = useState<ConsumerMe | null>(() => {
+    const raw = localStorage.getItem(meKey)
+    if (!raw) return null
+    try {
+      return JSON.parse(raw) as ConsumerMe
+    } catch {
+      return null
+    }
+  })
+  const [status, setStatus] = useState<AuthStatus>(() => (localStorage.getItem(tokenKey) && localStorage.getItem(meKey) ? 'authed' : 'loading'))
 
   useEffect(() => {
     let cancelled = false
@@ -16,19 +25,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!token) {
         setStatus('anon')
         setMe(null)
+        localStorage.removeItem(meKey)
         return
       }
       try {
         const data = await apiFetch<ConsumerMe>('/api/consumer/me', { token })
         if (cancelled) return
         setMe(data)
+        localStorage.setItem(meKey, JSON.stringify(data))
         setStatus('authed')
-      } catch {
+      } catch (err: unknown) {
         if (cancelled) return
-        localStorage.removeItem(tokenKey)
-        setToken(null)
-        setMe(null)
-        setStatus('anon')
+        const status = err && typeof err === 'object' && 'status' in err ? Number((err as { status: number }).status) : null
+        if (status === 401) {
+          localStorage.removeItem(tokenKey)
+          localStorage.removeItem(meKey)
+          setToken(null)
+          setMe(null)
+          setStatus('anon')
+          return
+        }
+        const hasCachedMe = Boolean(localStorage.getItem(meKey))
+        setStatus(hasCachedMe ? 'authed' : 'loading')
       }
     }
     void boot()
@@ -51,6 +69,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setToken(res.token)
         const nextMe = await apiFetch<ConsumerMe>('/api/consumer/me', { token: res.token })
         setMe(nextMe)
+        localStorage.setItem(meKey, JSON.stringify(nextMe))
         setStatus('authed')
       },
       login: async (email: string, password: string) => {
@@ -62,10 +81,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setToken(res.token)
         const nextMe = await apiFetch<ConsumerMe>('/api/consumer/me', { token: res.token })
         setMe(nextMe)
+        localStorage.setItem(meKey, JSON.stringify(nextMe))
         setStatus('authed')
       },
       logout: () => {
         localStorage.removeItem(tokenKey)
+        localStorage.removeItem(meKey)
         setToken(null)
         setMe(null)
         setStatus('anon')
