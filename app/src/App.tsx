@@ -60,7 +60,7 @@ function AuthedRoutes() {
   if (status === 'loading') {
     return (
       <div className="container py-5">
-        <LoadingAnimation label="Loading…" />
+        <LoadingAnimation />
       </div>
     )
   }

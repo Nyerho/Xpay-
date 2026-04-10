@@ -60,7 +60,7 @@ export function WalletPage() {
         <div className="list-group list-group-flush">
           {loading || !balance ? (
             <div className="list-group-item">
-              <LoadingAnimation label="Loading…" />
+              <LoadingAnimation />
             </div>
           ) : null}
           {!loading && balance && assets.length === 0 ? <div className="list-group-item text-muted">No assets</div> : null}

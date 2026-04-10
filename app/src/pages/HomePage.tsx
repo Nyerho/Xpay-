@@ -13,18 +13,77 @@ function formatEth(wei: string) {
   }
 }
 
-function ActionCard(props: { to: string; label: string; subtitle: string }) {
+function ActionCard(props: { to: string; label: string; subtitle: string; variant: string; icon: React.ReactNode }) {
   return (
     <div className="col-6">
       <Link to={props.to} className="text-decoration-none">
-        <div className="card xpay-card h-100">
+        <div className={`card xpay-card xpay-action-card xpay-action-${props.variant} h-100`}>
           <div className="card-body">
-            <div className="fw-semibold">{props.label}</div>
-            <div className="text-muted small">{props.subtitle}</div>
+            <div className="d-flex align-items-start gap-2">
+              <div className="xpay-action-icon">{props.icon}</div>
+              <div>
+                <div className="fw-semibold">{props.label}</div>
+                <div className="text-muted small">{props.subtitle}</div>
+              </div>
+            </div>
           </div>
         </div>
       </Link>
     </div>
+  )
+}
+
+function IconBuy() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+      <path d="M12 4v16m0 0 6-6m-6 6-6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function IconSell() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+      <path d="M12 20V4m0 0 6 6m-6-6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function IconConvert() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+      <path d="M7 7h12l-3-3m3 3-3 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M17 17H5l3 3m-3-3 3-3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function IconBills() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+      <path d="M7 3h10v18l-2-1-3 1-3-1-2 1V3Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M9 8h6M9 12h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function IconDeposit() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+      <path d="M4 10h16v10H4V10Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M7 10V7a5 5 0 0 1 10 0v3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M12 14v3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function IconCards() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+      <path d="M3 8h18v10H3V8Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M3 12h18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M7 16h3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
   )
 }
 
@@ -107,12 +166,12 @@ export function HomePage() {
       </div>
 
       <div className="row g-2 mb-3">
-        <ActionCard to="/buy" label="Buy" subtitle="Crypto onramp" />
-        <ActionCard to="/sell" label="Sell" subtitle="Offramp to USD" />
-        <ActionCard to="/convert" label="Convert" subtitle="USD ↔ NGN ↔ Crypto" />
-        <ActionCard to="/cards" label="Gift Cards" subtitle="Buy / sell cards" />
-        <ActionCard to="/bills" label="Pay Bills" subtitle="US billers" />
-        <ActionCard to="/deposit" label="Deposit" subtitle="Add funds" />
+        <ActionCard to="/buy" label="Buy" subtitle="Crypto onramp" variant="buy" icon={<IconBuy />} />
+        <ActionCard to="/sell" label="Sell" subtitle="Offramp to USD" variant="sell" icon={<IconSell />} />
+        <ActionCard to="/convert" label="Convert" subtitle="USD ↔ NGN ↔ Crypto" variant="convert" icon={<IconConvert />} />
+        <ActionCard to="/cards" label="Gift Cards" subtitle="Buy / sell cards" variant="cards" icon={<IconCards />} />
+        <ActionCard to="/bills" label="Pay Bills" subtitle="US billers" variant="bills" icon={<IconBills />} />
+        <ActionCard to="/deposit" label="Deposit" subtitle="Add funds" variant="deposit" icon={<IconDeposit />} />
       </div>
 
       {error ? <div className="alert alert-danger py-2">{error}</div> : null}

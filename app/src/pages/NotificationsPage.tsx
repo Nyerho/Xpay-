@@ -54,7 +54,7 @@ export function NotificationsPage() {
         <div className="list-group list-group-flush">
           {loading ? (
             <div className="list-group-item">
-              <LoadingAnimation label="Loading…" />
+              <LoadingAnimation />
             </div>
           ) : null}
           {!loading && rows.length === 0 ? <div className="list-group-item text-muted">No notifications yet</div> : null}
