@@ -116,7 +116,6 @@ export function HomePage() {
 
   return (
     <div className="container xpay-fade-in">
-      <TradingViewMarketOverview />
       <div className="card xpay-card shadow-sm mb-3">
         <div className="card-body">
           <div className="d-flex justify-content-between align-items-start">
@@ -166,6 +165,8 @@ export function HomePage() {
           </div>
         </div>
       </div>
+
+      <TradingViewMarketOverview />
 
       <div className="row g-2 mb-3">
         <ActionCard to="/buy" label="Buy" subtitle="Crypto onramp" variant="buy" icon={<IconBuy />} />

@@ -12,7 +12,7 @@ export function TradingViewMarketOverview() {
       width: '100%',
       height: 340,
       largeChartUrl: '',
-      isTransparent: true,
+      isTransparent: false,
       showSymbolLogo: true,
       showFloatingTooltip: true,
       plotLineColorGrowing: 'rgba(34, 197, 94, 0.85)',
@@ -57,10 +57,9 @@ export function TradingViewMarketOverview() {
       <div className="card-body">
         <div className="fw-semibold mb-2">Market overview</div>
         <div style={{ height: 340 }}>
-          <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+          <div ref={containerRef} style={{ width: '100%', height: '100%', background: '#07060a' }} />
         </div>
       </div>
     </div>
   )
 }
-
