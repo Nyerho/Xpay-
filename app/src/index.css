@@ -98,25 +98,6 @@ body {
   background: rgba(0, 0, 0, 0.18);
 }
 
-.xpay-action-buy {
-  background: linear-gradient(135deg, rgba(34, 197, 94, 0.22), rgba(15, 23, 42, 0.7));
-}
-.xpay-action-sell {
-  background: linear-gradient(135deg, rgba(244, 63, 94, 0.22), rgba(15, 23, 42, 0.7));
-}
-.xpay-action-convert {
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.22), rgba(15, 23, 42, 0.7));
-}
-.xpay-action-bills {
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.22), rgba(15, 23, 42, 0.7));
-}
-.xpay-action-deposit {
-  background: linear-gradient(135deg, rgba(168, 85, 247, 0.22), rgba(15, 23, 42, 0.7));
-}
-.xpay-action-cards {
-  background: linear-gradient(135deg, rgba(20, 184, 166, 0.22), rgba(15, 23, 42, 0.7));
-}
-
 .xpay-card {
   background: rgba(15, 13, 20, 0.92);
   border: 1px solid var(--xpay-border);
@@ -127,6 +108,56 @@ body {
   transform: translateY(-1px);
   box-shadow: var(--xpay-shadow);
   border-color: rgba(168, 85, 247, 0.25);
+}
+
+.xpay-card.xpay-action-buy {
+  background: radial-gradient(320px 140px at 20% 0%, rgba(34, 197, 94, 0.55), rgba(15, 13, 20, 0) 60%),
+    linear-gradient(135deg, rgba(34, 197, 94, 0.22), rgba(15, 13, 20, 0.96));
+  border-color: rgba(34, 197, 94, 0.22);
+}
+.xpay-card.xpay-action-sell {
+  background: radial-gradient(320px 140px at 20% 0%, rgba(244, 63, 94, 0.55), rgba(15, 13, 20, 0) 60%),
+    linear-gradient(135deg, rgba(244, 63, 94, 0.22), rgba(15, 13, 20, 0.96));
+  border-color: rgba(244, 63, 94, 0.22);
+}
+.xpay-card.xpay-action-convert {
+  background: radial-gradient(320px 140px at 20% 0%, rgba(59, 130, 246, 0.55), rgba(15, 13, 20, 0) 60%),
+    linear-gradient(135deg, rgba(59, 130, 246, 0.22), rgba(15, 13, 20, 0.96));
+  border-color: rgba(59, 130, 246, 0.22);
+}
+.xpay-card.xpay-action-bills {
+  background: radial-gradient(320px 140px at 20% 0%, rgba(245, 158, 11, 0.55), rgba(15, 13, 20, 0) 60%),
+    linear-gradient(135deg, rgba(245, 158, 11, 0.22), rgba(15, 13, 20, 0.96));
+  border-color: rgba(245, 158, 11, 0.22);
+}
+.xpay-card.xpay-action-deposit {
+  background: radial-gradient(320px 140px at 20% 0%, rgba(168, 85, 247, 0.6), rgba(15, 13, 20, 0) 60%),
+    linear-gradient(135deg, rgba(168, 85, 247, 0.24), rgba(15, 13, 20, 0.96));
+  border-color: rgba(168, 85, 247, 0.22);
+}
+.xpay-card.xpay-action-cards {
+  background: radial-gradient(320px 140px at 20% 0%, rgba(20, 184, 166, 0.55), rgba(15, 13, 20, 0) 60%),
+    linear-gradient(135deg, rgba(20, 184, 166, 0.22), rgba(15, 13, 20, 0.96));
+  border-color: rgba(20, 184, 166, 0.22);
+}
+
+.xpay-card.xpay-action-buy .xpay-action-icon {
+  background: rgba(34, 197, 94, 0.22);
+}
+.xpay-card.xpay-action-sell .xpay-action-icon {
+  background: rgba(244, 63, 94, 0.22);
+}
+.xpay-card.xpay-action-convert .xpay-action-icon {
+  background: rgba(59, 130, 246, 0.22);
+}
+.xpay-card.xpay-action-bills .xpay-action-icon {
+  background: rgba(245, 158, 11, 0.22);
+}
+.xpay-card.xpay-action-deposit .xpay-action-icon {
+  background: rgba(168, 85, 247, 0.22);
+}
+.xpay-card.xpay-action-cards .xpay-action-icon {
+  background: rgba(20, 184, 166, 0.22);
 }
 
 .xpay-fade-in {

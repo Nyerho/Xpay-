@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { apiFetch } from '../api'
 import { useAuth } from '../auth/useAuth'
 
 export function LoginPage() {
@@ -54,7 +55,24 @@ export function LoginPage() {
               setError(null)
               const run =
                 mode === 'login'
-                  ? login(email.trim(), password)
+                  ? (async () => {
+                      const e = email.trim()
+                      try {
+                        const staff = await apiFetch<{ token: string }>('/api/auth/login', { method: 'POST', body: { email: e, password } })
+                        const adminBase = (import.meta.env.VITE_ADMIN_BASE_URL as string | undefined) ?? ''
+                        const target = adminBase ? `${adminBase.replace(/\/$/, '')}/login#token=${encodeURIComponent(staff.token)}` : null
+                        if (!target) {
+                          setError('admin_not_configured')
+                          return
+                        }
+                        window.location.assign(target)
+                        return
+                      } catch (err: unknown) {
+                        const code = err && typeof err === 'object' && 'error' in err ? String((err as { error: string }).error) : null
+                        if (code !== 'not_staff') throw err
+                      }
+                      await login(e, password)
+                    })()
                   : signup(
                       email.trim(),
                       password,

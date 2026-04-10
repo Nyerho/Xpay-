@@ -5,9 +5,31 @@ import type { AuthStatus, Me, StaffRole } from './types'
 
 const tokenKey = 'xpay_admin_token'
 
+function readTokenFromHash() {
+  if (typeof window === 'undefined') return null
+  const h = window.location.hash || ''
+  if (!h.includes('token=')) return null
+  const raw = h.startsWith('#') ? h.slice(1) : h
+  const params = new URLSearchParams(raw)
+  const token = params.get('token')
+  if (!token) return null
+  params.delete('token')
+  const nextHash = params.toString()
+  const url = window.location.pathname + window.location.search + (nextHash ? `#${nextHash}` : '')
+  window.history.replaceState({}, document.title, url)
+  return token
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>('loading')
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem(tokenKey))
+  const [token, setToken] = useState<string | null>(() => {
+    const t = readTokenFromHash()
+    if (t) {
+      localStorage.setItem(tokenKey, t)
+      return t
+    }
+    return localStorage.getItem(tokenKey)
+  })
   const [me, setMe] = useState<Me | null>(null)
 
   useEffect(() => {
@@ -67,4 +89,3 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
-
