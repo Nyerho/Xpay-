@@ -16,6 +16,7 @@ import { SendPage } from './pages/SendPage'
 import { ConvertPage } from './pages/ConvertPage'
 import { NotificationsPage } from './pages/NotificationsPage'
 import { LoadingAnimation } from './components/LoadingAnimation'
+import { RouteLoadingOverlay } from './components/RouteLoadingOverlay'
 
 function TopBar() {
   return (
@@ -99,6 +100,7 @@ export default function App() {
               <Route path="/*" element={<AuthedRoutes />} />
             </Routes>
           </main>
+          <RouteLoadingOverlay />
           <BottomTabs />
         </div>
       </BrowserRouter>
