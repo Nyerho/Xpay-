@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import animationData from '../assets/lottie/loading-dots.json'
 
 type LottieModule = {
   loadAnimation: (params: {
@@ -8,7 +7,26 @@ type LottieModule = {
     loop: boolean
     autoplay: boolean
     animationData: unknown
+    rendererSettings?: Record<string, unknown>
   }) => { destroy: () => void }
+}
+
+let cachedAnimationData: unknown | null = null
+let cachedAnimationPromise: Promise<unknown> | null = null
+
+function loadAnimationData() {
+  if (cachedAnimationData) return Promise.resolve(cachedAnimationData)
+  if (cachedAnimationPromise) return cachedAnimationPromise
+  cachedAnimationPromise = fetch('/loading.json', { cache: 'force-cache' })
+    .then((r) => {
+      if (!r.ok) throw new Error('load_failed')
+      return r.json() as Promise<unknown>
+    })
+    .then((json) => {
+      cachedAnimationData = json
+      return json
+    })
+  return cachedAnimationPromise
 }
 
 export function LoadingAnimation(props: { size?: number; label?: string }) {
@@ -24,8 +42,8 @@ export function LoadingAnimation(props: { size?: number; label?: string }) {
       if (!destroyed && !started) setFailed(true)
     }, 1200)
 
-    import('lottie-web')
-      .then((mod) => {
+    Promise.all([import('lottie-web'), loadAnimationData()])
+      .then(([mod, animationData]) => {
         if (destroyed) return
         const lottie = (mod as unknown as { default: LottieModule }).default
         if (!ref.current || !lottie?.loadAnimation) return
@@ -36,6 +54,7 @@ export function LoadingAnimation(props: { size?: number; label?: string }) {
             loop: true,
             autoplay: true,
             animationData,
+            rendererSettings: { preserveAspectRatio: 'xMidYMid meet' },
           })
           started = true
         } catch {
