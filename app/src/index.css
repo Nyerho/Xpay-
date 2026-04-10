@@ -86,12 +86,11 @@ body {
 .xpay-route-loader {
   position: fixed;
   inset: 0;
-  z-index: 2000;
+  z-index: 9999;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(7, 6, 10, 0.92);
-  backdrop-filter: blur(8px);
+  background: rgba(7, 6, 10, 0.94);
 }
 
 .xpay-action-card {
