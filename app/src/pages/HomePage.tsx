@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { apiFetch } from '../api'
 import { useAuth } from '../auth/useAuth'
 import { TradingViewMarketOverview } from '../components/TradingViewMarketOverview'
+import { TradingViewTickerTape } from '../components/TradingViewTickerTape'
 
 function formatEth(wei: string) {
   try {
@@ -167,6 +168,7 @@ export function HomePage() {
       </div>
 
       <TradingViewMarketOverview />
+      <TradingViewTickerTape />
 
       <div className="row g-2 mb-3">
         <ActionCard to="/buy" label="Buy" subtitle="Crypto onramp" variant="buy" icon={<IconBuy />} />

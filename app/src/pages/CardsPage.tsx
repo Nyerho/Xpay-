@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../api'
 import { useAuth } from '../auth/useAuth'
 import { uploadPublicFile } from '../firebase'
+import { GiftCardRatesChart } from '../components/GiftCardRatesChart'
 
 const brands = ['Amazon', 'iTunes', 'Google Play', 'Steam', 'Walmart', 'Visa', 'Amex', 'eBay'] as const
 type Brand = (typeof brands)[number]
@@ -124,6 +125,7 @@ export function CardsPage() {
   return (
     <div className="container xpay-fade-in">
       <div className="h4 mb-3">Gift Cards</div>
+      <GiftCardRatesChart rates={rates} loading={loading} />
 
       <ul className="nav nav-pills mb-3">
         <li className="nav-item">
