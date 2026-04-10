@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import fallbackAnimationData from '../assets/lottie/loading-dots.json'
 
 type LottieModule = {
   loadAnimation: (params: {
@@ -26,6 +27,7 @@ function loadAnimationData() {
       cachedAnimationData = json
       return json
     })
+    .catch(() => fallbackAnimationData as unknown)
   return cachedAnimationPromise
 }
 
@@ -40,7 +42,7 @@ export function LoadingAnimation(props: { size?: number; label?: string }) {
     let started = false
     const timer = setTimeout(() => {
       if (!destroyed && !started) setFailed(true)
-    }, 1200)
+    }, 5000)
 
     Promise.all([import('lottie-web'), loadAnimationData()])
       .then(([mod, animationData]) => {
@@ -57,6 +59,7 @@ export function LoadingAnimation(props: { size?: number; label?: string }) {
             rendererSettings: { preserveAspectRatio: 'xMidYMid meet' },
           })
           started = true
+          setFailed(false)
         } catch {
           setFailed(true)
         }
