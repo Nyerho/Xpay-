@@ -1,5 +1,4 @@
 declare module 'lottie-web' {
-  const mod: any
+  const mod: unknown
   export default mod
 }
-

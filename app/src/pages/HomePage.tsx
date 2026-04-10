@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../api'
 import { useAuth } from '../auth/useAuth'
+import { TradingViewMarketOverview } from '../components/TradingViewMarketOverview'
 
 function formatEth(wei: string) {
   try {
@@ -115,6 +116,7 @@ export function HomePage() {
 
   return (
     <div className="container xpay-fade-in">
+      <TradingViewMarketOverview />
       <div className="card xpay-card shadow-sm mb-3">
         <div className="card-body">
           <div className="d-flex justify-content-between align-items-start">

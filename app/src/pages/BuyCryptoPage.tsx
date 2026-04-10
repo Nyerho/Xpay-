@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../api'
 import { useAuth } from '../auth/useAuth'
+import { TradingViewAdvancedChart } from '../components/TradingViewAdvancedChart'
 
 const coins = ['USDT', 'BTC', 'ETH'] as const
 type Coin = (typeof coins)[number]
@@ -42,6 +43,7 @@ export function BuyCryptoPage() {
   return (
     <div className="container xpay-fade-in">
       <div className="h4 mb-3">Buy Crypto</div>
+      <TradingViewAdvancedChart asset={coin} />
       <div className="card xpay-card shadow-sm">
         <div className="card-body">
           {error ? <div className="alert alert-danger py-2">{error}</div> : null}
