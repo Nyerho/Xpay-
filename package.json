@@ -8,6 +8,7 @@
     "dev": "set ComSpec=%SystemRoot%\\System32\\cmd.exe&& set COMSPEC=%SystemRoot%\\System32\\cmd.exe&& concurrently -n server,admin -c auto \"npm run dev -w server\" \"npm run dev -w admin\"",
     "dev:server": "npm run dev -w server",
     "dev:admin": "npm run dev -w admin",
+    "postinstall": "node scripts/postinstall-workspaces.cjs",
     "build": "npm run build -w server && npm run build -w admin && npm run build -w app",
     "lint": "npm run lint -w server && npm run lint -w admin && npm run lint -w app",
     "typecheck": "npm run typecheck -w server && npm run typecheck -w admin && npm run typecheck -w app"
