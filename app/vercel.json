@@ -1,6 +1,6 @@
 {
-  "installCommand": "npm install --workspaces",
-  "buildCommand": "npm run build -w app && node scripts/copy-app-dist.cjs",
+  "installCommand": "npm install",
+  "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "rewrites": [
     {
@@ -9,3 +9,4 @@
     }
   ]
 }
+
