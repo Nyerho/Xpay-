@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../api'
 import { useAuth } from '../auth/useAuth'
+import { LoadingAnimation } from '../components/LoadingAnimation'
 
 const coins = ['BTC', 'ETH', 'USDT'] as const
 type Coin = (typeof coins)[number]
@@ -75,7 +76,7 @@ export function SellCryptoPage() {
             <input className="form-control" value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" />
           </div>
 
-          {loading ? <div className="text-muted small">Loading quotes…</div> : null}
+          {loading ? <LoadingAnimation /> : null}
           {!loading && !sellPrice ? (
             <div className="alert alert-secondary">
               <div className="fw-semibold">Quotes unavailable</div>

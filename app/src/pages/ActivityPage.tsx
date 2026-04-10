@@ -119,7 +119,11 @@ export function ActivityPage() {
               </button>
             </div>
 
-            {detailLoading ? <div className="text-muted small mt-2">Loading…</div> : null}
+            {detailLoading ? (
+              <div className="mt-2">
+                <LoadingAnimation />
+              </div>
+            ) : null}
 
             {receipt && detail ? (
               <div className="mt-3">

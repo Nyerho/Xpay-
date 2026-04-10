@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { LoadingAnimation } from './LoadingAnimation'
 
 type Rate = { buyPct: number; sellPct: number }
 
@@ -37,7 +38,7 @@ export function GiftCardRatesChart(props: { rates: Record<string, Rate> | null; 
           <div className="text-muted small">Buy / Sell</div>
         </div>
 
-        {props.loading ? <div className="text-muted small">Loading…</div> : null}
+        {props.loading ? <LoadingAnimation /> : null}
         {!props.loading && rows.length === 0 ? <div className="text-muted small">Rates unavailable</div> : null}
 
         <div className="xpay-rates-grid mt-2">
@@ -63,4 +64,3 @@ export function GiftCardRatesChart(props: { rates: Record<string, Rate> | null; 
     </div>
   )
 }
-

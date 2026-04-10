@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../api'
 import { useAuth } from '../auth/useAuth'
 import { TradingViewAdvancedChart } from '../components/TradingViewAdvancedChart'
+import { LoadingAnimation } from '../components/LoadingAnimation'
 
 const coins = ['USDT', 'BTC', 'ETH'] as const
 type Coin = (typeof coins)[number]
@@ -63,7 +64,7 @@ export function BuyCryptoPage() {
             <div className="text-muted small mt-1">Minimum: $1.00</div>
           </div>
 
-          {loading ? <div className="text-muted small">Loading quotes…</div> : null}
+          {loading ? <LoadingAnimation /> : null}
           {!loading && !buyPrice ? (
             <div className="alert alert-secondary">
               <div className="fw-semibold">Quotes unavailable</div>
